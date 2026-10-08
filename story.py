@@ -17,6 +17,7 @@ A choice is a dictionary:
     "label"    -> the text on the button
     "kind"     -> "track" (choice 1), "safe" or "bold"
     "chaos"    -> how many Chaos points it adds (Bold choices 2, 3 and 4 = 1)
+    "note"     -> what Mayeul secretly writes in his notebook about you
     "reaction" -> the lines we show after the player clicks
     "next"     -> the id of the next scene (not needed for the final choice)
 """
@@ -44,15 +45,15 @@ CHARACTERS = {
                  "eyes": "half", "brows": "raised_one", "mouth": "flat",
                  "outfit": "#3a3f58", "collar": "collar", "accessory": "glasses"},
     },
-    "hargrove": {
-        "name": "Mr. Hargrove", "role": "HR Manager. Always smiling.",
+    "brieuc": {
+        "name": "Brieuc", "role": "HR Manager. Always smiling.",
         "color": "#ffd166",
         "look": {"skin": "#f3c9a8", "hair": "#9a9a9a", "hair_style": "bald",
                  "eyes": "dots", "brows": "normal", "mouth": "big_smile",
                  "outfit": "#4a6fa5", "collar": "tie", "accessory": "notebook"},
     },
-    "bennett": {
-        "name": "Mrs. Bennett", "role": "CEO. Your old English teacher.",
+    "doe": {
+        "name": "Mrs. Doe", "role": "CEO. Your old English teacher.",
         "color": "#ff6b6b",
         "look": {"skin": "#efd2bd", "hair": "#c9c9c9", "hair_style": "bun",
                  "eyes": "dots", "brows": "stern", "mouth": "frown",
@@ -139,6 +140,7 @@ SCENES = {
             {
                 "label": "Lie about why you're late.",
                 "kind": "track", "track": "A", "chaos": 0, "next": "A1",
+                "note": "10:25. Late. Italy-shaped stain. Starts with a lie. Classic.",
                 "reaction": [
                     ("you", "Yes! I'm so sorry. I had a... family emergency."),
                     ("mayeul", "A family emergency. Of course you did."),
@@ -148,6 +150,7 @@ SCENES = {
             {
                 "label": "Tell the truth.",
                 "kind": "track", "track": "B", "chaos": 0, "next": "B1",
+                "note": "10:25. Late. Tells the truth. Suspicious. Nobody does that.",
                 "reaction": [
                     ("you", "Yes. My alarm didn't ring, my train was late, and a stranger turned my shirt into Italy."),
                     ("mayeul", "..."),
@@ -157,6 +160,7 @@ SCENES = {
             {
                 "label": "Run away.",
                 "kind": "track", "track": "C", "chaos": 0, "next": "C1",
+                "note": "10:25. Late. Said 'water the plants'. Ran. The door is still moving.",
                 "reaction": [
                     ("you", "No! I'm... here to water the plants."),
                     ("mayeul", "We don't have plants. They all died. Nobody here has the energy to keep anything alive."),
@@ -181,15 +185,17 @@ SCENES = {
             {
                 "label": "\"My grandmother. She's in hospital.\"",
                 "kind": "safe", "chaos": 0, "next": "A2",
+                "note": "Grandmother in hospital. Lie level: beginner.",
                 "reaction": [
                     ("you", "My grandmother. She's in hospital."),
                     (None, "Mayeul writes 'grandmother'. Then 'hospital'. Then a very small question mark."),
-                    ("mayeul", "Poor woman. I'll tell Mr. Hargrove. He loves a sad story. It's the only thing that makes him feel alive."),
+                    ("mayeul", "Poor woman. I'll tell Brieuc. He loves a sad story. It's the only thing that makes him feel alive."),
                 ],
             },
             {
                 "label": "\"My goldfish, Mr. Bubbles. It was complicated.\"",
                 "kind": "bold", "chaos": 1, "next": "A2",
+                "note": "Goldfish. Mr. Bubbles. Underlined twice. Then a third time, for me.",
                 "reaction": [
                     ("you", "My goldfish. Mr. Bubbles. It was... complicated."),
                     (None, "Mayeul writes 'goldfish'. He underlines it twice."),
@@ -204,12 +210,12 @@ SCENES = {
     "A2": {
         "number": 3, "track": "A",
         "place": "reception", "location": "Synergix Solutions - Reception", "time": "10:29",
-        "cast": ["you", "hargrove", "mayeul"],
+        "cast": ["you", "brieuc", "mayeul"],
         "lines": [
             (None, "A man walks in. Big smile. Small notebook. The smile never moves. The pen never stops."),
-            ("hargrove", "Hello, hello! I'm Mr. Hargrove, Head of Human Resources and Happiness!"),
-            ("hargrove", "Mayeul told me everything. You poor thing. At Synergix we're a family, so your pain is our pain."),
-            ("hargrove", "So tell me... how is the patient doing?"),
+            ("brieuc", "Hello, hello! I'm Brieuc, Head of Human Resources and Happiness! Just Brieuc. No 'Mister'. We're a family here."),
+            ("brieuc", "Mayeul told me everything. You poor thing. At Synergix we're a family, so your pain is our pain."),
+            ("brieuc", "So tell me... how is the patient doing?"),
             (None, "He is already writing. You haven't said anything yet."),
         ],
         "question": "How much do you say about 'the patient'?",
@@ -217,9 +223,10 @@ SCENES = {
             {
                 "label": "Stay vague: \"I'd rather not talk about it.\"",
                 "kind": "safe", "chaos": 0, "next": "A3",
+                "note": "'I'd rather not talk about it.' Smart. Silence can't be fact-checked.",
                 "reaction": [
                     ("you", "I'd rather not talk about it."),
-                    ("hargrove", "Of course! Of course. We respect your privacy."),
+                    ("brieuc", "Of course! Of course. We respect your privacy."),
                     (None, "He writes for one whole minute. You can read the words 'trauma' and 'potential'."),
                     ("mayeul", "Don't worry. Your silence is now in your file."),
                 ],
@@ -227,11 +234,12 @@ SCENES = {
             {
                 "label": "Invent everything: the hospital, the nurse, a Latin disease.",
                 "kind": "bold", "chaos": 1, "next": "A3",
+                "note": "Invented a nurse called Brenda. And a horse. Room 404 does not exist.",
                 "reaction": [
                     ("you", "The patient is at St. Margaret's Hospital, room 404. The nurse is called Brenda. It's a very rare disease: Dramaticus Latinus Infinitum."),
                     ("you", "Only three cases in Europe. One of them was a horse."),
-                    ("hargrove", "Brenda. Room 404. Dramaticus... how do you spell Infinitum?"),
-                    ("hargrove", "This is going in the company newsletter!"),
+                    ("brieuc", "Brenda. Room 404. Dramaticus... how do you spell Infinitum?"),
+                    ("brieuc", "This is going in the company newsletter!"),
                     ("mayeul", "Room 404. Patient not found."),
                 ],
             },
@@ -241,32 +249,34 @@ SCENES = {
     "A3": {
         "number": 4, "track": "A",
         "place": "office", "location": "Interview room", "time": "10:35",
-        "cast": ["you", "hargrove"],
+        "cast": ["you", "brieuc"],
         "lines": [
             (None, "The interview room has one window, one plastic plant and one poster: a mountain with the word TEAMWORK. The mountain is alone."),
-            ("hargrove", "Right! Let's start. Don't be nervous. Nobody has ever cried in this room. This week."),
-            ("hargrove", "Tell me about a difficult situation you handled."),
+            ("brieuc", "Right! Let's start. Don't be nervous. Nobody has ever cried in this room. This week."),
+            ("brieuc", "Tell me about a difficult situation you handled."),
         ],
         "question": "Which difficult situation do you talk about?",
         "choices": [
             {
                 "label": "Tell a story from your internship.",
                 "kind": "safe", "chaos": 0, "next": "A4",
+                "note": "Printer + paperclip. Brieuc was impressed. Brieuc is impressed by staplers.",
                 "reaction": [
                     ("you", "During my internship, the printer broke one hour before a big meeting. I fixed it with a paperclip and a lot of prayer."),
-                    ("hargrove", "Resourceful! I'm writing 'paperclip'. It's a powerful word."),
+                    ("brieuc", "Resourceful! I'm writing 'paperclip'. It's a powerful word."),
                     (None, "He draws a little paperclip. Then he colours it in. Carefully."),
                 ],
             },
             {
                 "label": "Use this morning as your example.",
                 "kind": "bold", "chaos": 1, "next": "A4",
+                "note": "Used today's lie as a job skill. Disgusting. Brilliant.",
                 "reaction": [
                     ("you", "This morning. No alarm, a late train, a coffee attack and a family tragedy. And I'm still here."),
                     ("you", "It taught me crisis management."),
-                    (None, "Mr. Hargrove wipes a tear from his eye."),
-                    ("hargrove", "In the middle of a tragedy... you came here. For us. That's the Synergix spirit: suffer, but on time."),
-                    ("hargrove", "Well. Almost on time."),
+                    (None, "Brieuc wipes a tear from his eye."),
+                    ("brieuc", "In the middle of a tragedy... you came here. For us. That's the Synergix spirit: suffer, but on time."),
+                    ("brieuc", "Well. Almost on time."),
                 ],
             },
         ],
@@ -275,11 +285,11 @@ SCENES = {
     "A4": {
         "number": 5, "track": "A", "final": True,
         "place": "office", "location": "Interview room", "time": "10:48",
-        "cast": ["you", "hargrove", "mayeul"],
+        "cast": ["you", "brieuc", "mayeul"],
         "lines": [
-            (None, "Mr. Hargrove closes his notebook. It's the first time today. It feels dangerous."),
-            ("hargrove", "I've seen enough. We'd like to offer you the job!"),
-            ("hargrove", "Any questions?"),
+            (None, "Brieuc closes his notebook. It's the first time today. It feels dangerous."),
+            ("brieuc", "I've seen enough. We'd like to offer you the job!"),
+            ("brieuc", "Any questions?"),
             ("mayeul", "(from the door) Think carefully. This is the only time anyone here will ask for your opinion."),
         ],
         "question": "FINAL DECISION. Any questions?",
@@ -287,18 +297,20 @@ SCENES = {
             {
                 "label": "\"No, thank you. I accept.\"",
                 "kind": "safe", "chaos": 0,
+                "note": "Accepted without a single question. A natural Synergix employee.",
                 "reaction": [
                     ("you", "No, thank you. I accept."),
-                    ("hargrove", "Wonderful! Welcome to the family. There's no way out! Ha ha. That's a joke. Mostly."),
+                    ("brieuc", "Wonderful! Welcome to the family. There's no way out! Ha ha. That's a joke. Mostly."),
                 ],
             },
             {
                 "label": "Ask for a higher salary and a company car.",
                 "kind": "bold", "chaos": 0,
+                "note": "Asked for a company car. We don't even have company chairs.",
                 "reaction": [
                     ("you", "Yes, actually. I'd like a higher salary. And a company car."),
                     (None, "Silence. Even the air conditioning stops."),
-                    ("hargrove", "...Interesting."),
+                    ("brieuc", "...Interesting."),
                     (None, "He opens the notebook again. He writes for a very, very long time."),
                 ],
             },
@@ -320,6 +332,7 @@ SCENES = {
             {
                 "label": "Keep your stained shirt.",
                 "kind": "safe", "chaos": 0, "next": "B2",
+                "note": "Kept the stain. Respect. (Do not tell anyone I wrote this.)",
                 "reaction": [
                     ("you", "No, thank you. I'll keep my shirt. Italy stays."),
                     ("mayeul", "Respect."),
@@ -329,6 +342,7 @@ SCENES = {
             {
                 "label": "Accept the spare shirt.",
                 "kind": "bold", "chaos": 1, "next": "B2", "shirt": "orange",
+                "note": "Wore the 2009 polo. Brave. Or colour-blind.",
                 "reaction": [
                     ("you", "Yes, please. Anything is better than Italy."),
                     (None, "It's a bright orange Synergix polo from 2009. The logo is the size of a pizza. It smells like a team-building weekend."),
@@ -341,32 +355,34 @@ SCENES = {
     "B2": {
         "number": 3, "track": "B",
         "place": "office", "location": "Interview room", "time": "10:31",
-        "cast": ["you", "hargrove"],
+        "cast": ["you", "brieuc"],
         "lines": [
-            (None, "Mr. Hargrove takes you to the interview room. Big smile. Small notebook. He never stops smiling, and he never stops writing."),
-            ("hargrove", "Hello! Mr. Hargrove, Head of Human Resources and Happiness. Mayeul says you're honest! We love honest people. They're so easy to write about."),
-            ("hargrove", "Let's start with a classic. Tell me about a time you failed."),
+            (None, "Brieuc takes you to the interview room. Big smile. Small notebook. He never stops smiling, and he never stops writing."),
+            ("brieuc", "Hello! I'm Brieuc, Head of Human Resources and Happiness. Mayeul says you're honest! We love honest people. They're so easy to write about."),
+            ("brieuc", "Let's start with a classic. Tell me about a time you failed."),
         ],
         "question": "Which failure do you share?",
         "choices": [
             {
                 "label": "The burnt birthday cake.",
                 "kind": "safe", "chaos": 0, "next": "B3",
+                "note": "Burnt cake. Fire brigade. Sweet, but not a real failure.",
                 "reaction": [
                     ("you", "I once made a birthday cake for my best friend. I put the oven on 250 degrees and fell asleep."),
                     ("you", "The fire brigade came. They sang Happy Birthday. It was a nice party, actually."),
-                    ("hargrove", "Ha! Fire is just energy that needs management. I'm writing 'leadership'."),
+                    ("brieuc", "Ha! Fire is just energy that needs management. I'm writing 'leadership'."),
                 ],
             },
             {
                 "label": "The \"Reply All\" love letter.",
                 "kind": "bold", "chaos": 1, "next": "B3",
+                "note": "'Reply All' love letter. 4,000 readers. I want a copy.",
                 "reaction": [
                     ("you", "In my second year, I wrote a love letter to a girl in my class. Then I clicked 'Reply All'."),
                     ("you", "It went to the whole university. Four thousand people. The Dean replied: 'Very touching. Please stop.'"),
-                    ("hargrove", "Wow. Did she answer?"),
+                    ("brieuc", "Wow. Did she answer?"),
                     ("you", "She changed universities."),
-                    (None, "Mr. Hargrove writes: 'Communication skills: unforgettable.'"),
+                    (None, "Brieuc writes: 'Communication skills: unforgettable.'"),
                 ],
             },
         ],
@@ -375,9 +391,9 @@ SCENES = {
     "B3": {
         "number": 4, "track": "B",
         "place": "office", "location": "Interview room", "time": "10:40",
-        "cast": ["you", "hargrove"],
+        "cast": ["you", "brieuc"],
         "lines": [
-            ("hargrove", "Next question. My favourite one! Why do you want this job?"),
+            ("brieuc", "Next question. My favourite one! Why do you want this job?"),
             (None, "He holds his pen above the page. He looks like a cat watching a bird."),
         ],
         "question": "Why do you want this job?",
@@ -385,20 +401,22 @@ SCENES = {
             {
                 "label": "\"I like your company's projects and values.\"",
                 "kind": "safe", "chaos": 0, "next": "B4",
+                "note": "Likes our 'values'. Nobody knows our values. Not even the poster.",
                 "reaction": [
                     ("you", "I like your company's projects and values."),
-                    ("hargrove", "Wonderful! Which values?"),
+                    ("brieuc", "Wonderful! Which values?"),
                     ("you", "...All of them."),
-                    ("hargrove", "Perfect answer. Nobody here knows them either."),
+                    ("brieuc", "Perfect answer. Nobody here knows them either."),
                 ],
             },
             {
                 "label": "\"Because I need money. My rent is 800 euros.\"",
                 "kind": "bold", "chaos": 1, "next": "B4",
+                "note": "Rent: 800 euros. Fridge: one lemon. Most honest answer since 2009.",
                 "reaction": [
                     ("you", "Because I need money. My rent is 800 euros, and my fridge contains one lemon."),
-                    (None, "Mr. Hargrove stops smiling for half a second. Then he smiles even harder, which is somehow worse."),
-                    ("hargrove", "That's the most honest answer we've had since 2009!"),
+                    (None, "Brieuc stops smiling for half a second. Then he smiles even harder, which is somehow worse."),
+                    ("brieuc", "That's the most honest answer we've had since 2009!"),
                     ("mayeul", "(from the corridor) Since the orange polo."),
                 ],
             },
@@ -408,32 +426,34 @@ SCENES = {
     "B4": {
         "number": 5, "track": "B", "final": True,
         "place": "office", "location": "Interview room", "time": "10:50",
-        "cast": ["you", "bennett", "hargrove"],
+        "cast": ["you", "doe", "brieuc"],
         "lines": [
-            (None, "Suddenly, the door opens. The temperature drops by five degrees. Mr. Hargrove stands up very fast."),
-            (None, "It's Mrs. Bennett, the CEO. You know her. She was your English teacher at school."),
+            (None, "Suddenly, the door opens. The temperature drops by five degrees. Brieuc stands up very fast."),
+            (None, "It's Mrs. Doe, the CEO. You know her. She was your English teacher at school."),
             (None, "On your Year 9 report, she wrote: 'Will never amount to anything. Also, please stop writing \"gonna\".'"),
-            ("bennett", "Well, well, well. Look who's here. Late, I imagine."),
-            ("hargrove", "Mrs. Bennett! Do you... know our candidate?"),
+            ("doe", "Well, well, well. Look who's here. Late, I imagine."),
+            ("brieuc", "Mrs. Doe! Do you... know our candidate?"),
         ],
         "question": "FINAL DECISION. Your old teacher is staring at you.",
         "choices": [
             {
-                "label": "\"Good morning, Mrs. Bennett. It's nice to see you again.\"",
+                "label": "\"Good morning, Mrs. Doe. It's nice to see you again.\"",
                 "kind": "safe", "chaos": 0,
+                "note": "Polite to Mrs. Doe. She hates that.",
                 "reaction": [
-                    ("you", "Good morning, Mrs. Bennett. It's nice to see you again."),
-                    ("bennett", "Full sentence. Correct grammar. A polite lie. You've grown."),
+                    ("you", "Good morning, Mrs. Doe. It's nice to see you again."),
+                    ("doe", "Full sentence. Correct grammar. A polite lie. You've grown."),
                     (None, "She doesn't look happy. She looks like someone who just lost a bet."),
                 ],
             },
             {
                 "label": "\"Oh no. Not you.\"",
                 "kind": "bold", "chaos": 0,
+                "note": "Said 'Oh no. Not you.' to the CEO. I almost dropped my coffee.",
                 "reaction": [
                     ("you", "Oh no. Not you."),
-                    ("bennett", "Oh yes. Me."),
-                    (None, "Mr. Hargrove writes 'Oh no. Not you.' and underlines it three times."),
+                    ("doe", "Oh yes. Me."),
+                    (None, "Brieuc writes 'Oh no. Not you.' and underlines it three times."),
                     ("mayeul", "(from the corridor) This is better than Netflix."),
                 ],
             },
@@ -456,6 +476,7 @@ SCENES = {
             {
                 "label": "Stop at a small park and sit on a bench.",
                 "kind": "safe", "chaos": 0, "next": "C2",
+                "note": "Sat on a bench. A pigeon judged them. I agree with the pigeon.",
                 "reaction": [
                     (None, "You walk into a small park and fall onto a bench."),
                     (None, "A pigeon lands next to you. It looks at the stain. Even the pigeon is judging you."),
@@ -466,6 +487,7 @@ SCENES = {
             {
                 "label": "Keep running. Buy a random shirt and change in the street.",
                 "kind": "bold", "chaos": 1, "next": "C2", "shirt": "pink",
+                "note": "Bought a 'WORLD'S BEST DAD' shirt. Changed in the street. Not a dad.",
                 "reaction": [
                     (None, "You run into the first shop you see and grab the first shirt you see. You change right there, in the street."),
                     (None, "It's pink. On the front, in big letters: WORLD'S BEST DAD."),
@@ -491,6 +513,7 @@ SCENES = {
             {
                 "label": "\"I ran away.\"",
                 "kind": "safe", "chaos": 0, "next": "C3",
+                "note": "Told Mum the truth. Mum is now disappointed in three new ways.",
                 "reaction": [
                     ("you", "I ran away."),
                     ("mum", "..."),
@@ -501,6 +524,7 @@ SCENES = {
             {
                 "label": "\"It went great, they love me!\"",
                 "kind": "bold", "chaos": 1, "next": "C3",
+                "note": "Lied to Mum. 47 WhatsApp messages. Uncle Pete sent a banana.",
                 "reaction": [
                     ("you", "It went great! They love me!"),
                     ("mum", "I KNEW IT! I'm telling everyone!"),
@@ -526,6 +550,7 @@ SCENES = {
             {
                 "label": "\"Just resting, thanks.\"",
                 "kind": "safe", "chaos": 0, "next": "C4",
+                "note": "'Just resting.' On a Tuesday. In an interview outfit. Sure.",
                 "reaction": [
                     ("you", "Just resting, thanks."),
                     ("man", "Of course. Resting. On a Tuesday morning. In an interview outfit."),
@@ -535,6 +560,7 @@ SCENES = {
             {
                 "label": "Tell him about your whole day, including the stain.",
                 "kind": "bold", "chaos": 1, "next": "C4",
+                "note": "Told a stranger everything. Including Sicily. Report received.",
                 "reaction": [
                     ("you", "Rough? My alarm didn't ring, my train was late because of a pigeon, a stranger attacked me with a latte, and look: my shirt is Italy. That's Sicily. Then I ran away from my interview."),
                     ("man", "Fascinating. And how did the coffee taste?"),
@@ -559,6 +585,7 @@ SCENES = {
             {
                 "label": "Refuse politely and wish him good luck.",
                 "kind": "safe", "chaos": 0,
+                "note": "Refused the second interview. Subject declined. Noted. Very noted.",
                 "reaction": [
                     ("you", "No, thanks. I think one interview disaster is enough for one day. Good luck, though!"),
                     ("man", "Shame. Good luck to you too."),
@@ -568,6 +595,7 @@ SCENES = {
             {
                 "label": "Accept immediately.",
                 "kind": "bold", "chaos": 0,
+                "note": "Followed a stranger into a grey building. No questions. Excellent.",
                 "reaction": [
                     ("you", "Yes. Let's go. Right now. Before my brain can stop me."),
                     ("man", "Excellent. Follow me."),
@@ -588,12 +616,12 @@ ENDINGS = {
     1: {
         "title": "Hired by Pity", "type": "calm", "track": "A",
         "place": "office", "location": "Synergix Solutions - Your new desk", "time": "MONDAY",
-        "cast": ["you", "hargrove", "mayeul"],
+        "cast": ["you", "brieuc", "mayeul"],
         "lines": [
             (None, "You start on Monday."),
             (None, "On Monday, there is a cake on your desk. The card says: 'Stay strong. We are your family now.'"),
             (None, "On Tuesday, another cake. On Wednesday, a lasagna. On Thursday, a woman you have never met hugs you in the lift and cries."),
-            ("hargrove", "How is the patient? Any news? Should we start a fundraiser?"),
+            ("brieuc", "How is the patient? Any news? Should we start a fundraiser?"),
             (None, "Everybody thinks someone you love is dying. Nobody asks for details. They just bring sugar."),
             (None, "After one month, you have gained 3 kilos and lost your dignity."),
             ("mayeul", "I never bring cake. I just watch. I know."),
@@ -602,12 +630,12 @@ ENDINGS = {
     2: {
         "title": "Hired by Accident", "type": "medium", "track": "A",
         "place": "office", "location": "Synergix Solutions - Data Department", "time": "FRIDAY",
-        "cast": ["you", "hargrove", "mayeul"],
+        "cast": ["you", "brieuc", "mayeul"],
         "lines": [
-            (None, "Mr. Hargrove takes so many notes that his files get confused. Your file is mixed up with another candidate's: Dr. Priya Raman, PhD, ten years of experience."),
+            (None, "Brieuc takes so many notes that his files get confused. Your file is mixed up with another candidate's: Dr. Priya Raman, PhD, ten years of experience."),
             (None, "The next morning, you receive a contract. Job title: Senior Data Scientist. Salary: big. Very big. PhD big."),
             ("you", "Sorry... what does a Senior Data Scientist do?"),
-            ("hargrove", "Nobody knows! That's why we pay so much."),
+            ("brieuc", "Nobody knows! That's why we pay so much."),
             (None, "Every Friday, you make a chart. Everyone claps. Nobody reads it."),
             ("mayeul", "Nice chart. Is it upside down?"),
             (None, "It is. You get a bonus for it. Somewhere, Dr. Priya Raman receives a rejection email: 'We were looking for more crisis management.'"),
@@ -616,11 +644,11 @@ ENDINGS = {
     3: {
         "title": "The Funeral of a Perfectly Healthy Grandma", "type": "wild", "track": "A",
         "place": "funeral", "location": "St. Margaret's Church", "time": "SATURDAY",
-        "cast": ["you", "grandma", "hargrove", "mayeul"],
+        "cast": ["you", "grandma", "brieuc", "mayeul"],
         "lines": [
             (None, "On Monday, HR sends a huge bunch of flowers to your 'poor sick grandmother'. To her real address."),
-            (None, "On Tuesday, a card signed by 200 employees. On Wednesday, a fruit basket. On Thursday, Mr. Hargrove calls."),
-            ("hargrove", "We're so sorry for your loss. When is the funeral? The whole family wants to come. The Synergix family, I mean."),
+            (None, "On Tuesday, a card signed by 200 employees. On Wednesday, a fruit basket. On Thursday, Brieuc calls."),
+            ("brieuc", "We're so sorry for your loss. When is the funeral? The whole family wants to come. The Synergix family, I mean."),
             (None, "You have no choice. You organise a funeral. For a woman who is perfectly healthy and does aqua-gym three times a week."),
             (None, "Your grandmother comes. She wears black. She sits in the first row, eating a sandwich, very confused."),
             ("grandma", "Who died?"),
@@ -634,38 +662,38 @@ ENDINGS = {
     4: {
         "title": "The Boss Is Your Old Teacher", "type": "calm", "track": "B",
         "place": "office", "location": "Synergix Solutions - Meeting room B", "time": "FRIDAY",
-        "cast": ["you", "bennett", "hargrove"],
+        "cast": ["you", "doe", "brieuc"],
         "lines": [
             (None, "You get the job."),
-            ("bennett", "I knew you would end up here."),
+            ("doe", "I knew you would end up here."),
             (None, "Nobody knows if this is a compliment. Probably not."),
             (None, "Every Friday, she gives you homework: a 500-word essay called 'Why This Meeting Could Have Been an Email'."),
-            (None, "When you arrive two minutes late, you get detention. Detention is in meeting room B. With Mr. Hargrove. He takes notes."),
-            ("bennett", "And stop saying 'gonna'. You're an adult now. Allegedly."),
+            (None, "When you arrive two minutes late, you get detention. Detention is in meeting room B. With Brieuc. He takes notes."),
+            ("doe", "And stop saying 'gonna'. You're an adult now. Allegedly."),
         ],
     },
     5: {
         "title": "The Job You Didn't Apply For", "type": "medium", "track": "B",
         "place": "office", "location": "Synergix Solutions - The basement", "time": "MONDAY",
-        "cast": ["you", "bennett", "mayeul"],
+        "cast": ["you", "doe", "mayeul"],
         "lines": [
-            ("bennett", "We don't have a job for you. But we do have a job that nobody else wants."),
+            ("doe", "We don't have a job for you. But we do have a job that nobody else wants."),
             (None, "Your new title: Assistant to the Assistant of the Assistant."),
             (None, "Fourteen people refused it before you. One of them was a robot vacuum cleaner. It left the building by itself."),
             (None, "Your main task: bring coffee to the people whose job is to bring coffee."),
             ("mayeul", "Congratulations. You're at the bottom of the food chain. Under the printer."),
             ("you", "Is there any chance of a promotion?"),
-            ("bennett", "There's a chance of rain."),
+            ("doe", "There's a chance of rain."),
         ],
     },
     6: {
         "title": "The Viral Intern", "type": "wild", "track": "B",
         "place": "office", "location": "Synergix Solutions - You live here now", "time": "23:59",
-        "cast": ["you", "bennett", "mayeul"],
+        "cast": ["you", "doe", "mayeul"],
         "lines": [
-            (None, "Mrs. Bennett looks at you for a long, long time. Like a bad essay she can't stop reading."),
-            ("bennett", "You have no filter. You never had one. In Year 9, you told the headmaster his tie looked like a sad lasagna."),
-            ("bennett", "We need someone with no filter. You're running our social media. Starting now."),
+            (None, "Mrs. Doe looks at you for a long, long time. Like a bad essay she can't stop reading."),
+            ("doe", "You have no filter. You never had one. In Year 9, you told the headmaster his tie looked like a sad lasagna."),
+            ("doe", "We need someone with no filter. You're running our social media. Starting now."),
             (None, "Your first post: 'We are not a family. We are a company. Please stop asking.'"),
             (None, "One hour later: ten million views. Two hours later: journalists in the car park, a TV crew, and a man selling T-shirts with your post on them."),
             (None, "You can't leave the building. You live in the office now. You sleep under your desk."),
@@ -727,6 +755,15 @@ TRACKS = {
     "A": {"name": "The Lie",   "endings": {"calm": 1, "medium": 2, "wild": 3}},
     "B": {"name": "The Truth", "endings": {"calm": 4, "medium": 5, "wild": 6}},
     "C": {"name": "Run Away",  "endings": {"calm": 7, "medium": 8, "wild": 9}},
+}
+
+
+# Mayeul's final verdict at the bottom of his notebook (key = Chaos score).
+NOTEBOOK_VERDICTS = {
+    0: "Chaos 0/3. Safe, polite, forgettable. Like beige paint.",
+    1: "Chaos 1/3. Mostly harmless. Slightly dangerous on Tuesdays.",
+    2: "Chaos 2/3. A walking HR incident. I'm starting to like you.",
+    3: "Chaos 3/3. Pure chaos. Synergix needs people like you. That is not a compliment.",
 }
 
 

@@ -76,6 +76,14 @@ def play_once():
     ending = game.ending
     print("=" * WIDTH)
     play_lines(ending["lines"])
+
+    # Mayeul's notebook
+    notes, verdict = game.notebook()
+    print("\n" + "MAYEUL'S NOTEBOOK - OBSERVATIONS, VOLUME 7".center(WIDTH, "-"))
+    for i, note in enumerate(notes, start=1):
+        print(textwrap.fill(f" {i}. {note}", WIDTH, subsequent_indent="    "))
+    print(textwrap.fill(f" VERDICT: {verdict}  - M.", WIDTH, subsequent_indent="    "))
+    input("   ...")
     print("=" * WIDTH)
     print(f" ENDING {game.ending_id}/9: {ending['title'].upper()}")
     print(f" Type: {ending['type'].upper()}   Final Chaos: {game.chaos}/{MAX_CHAOS}")

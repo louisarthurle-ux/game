@@ -6,7 +6,7 @@ The graphical version (game.py) and the terminal version (terminal.py)
 both use this same class, so the rules are written only once.
 """
 
-from story import SCENES, ENDINGS, TRACKS, FIRST_SCENE
+from story import SCENES, ENDINGS, TRACKS, FIRST_SCENE, NOTEBOOK_VERDICTS
 
 MAX_CHAOS = 3        # 3 Bold choices possible (choices 2, 3 and 4)
 TOTAL_CHOICES = 5    # every path has exactly 5 choices
@@ -76,6 +76,7 @@ class Game:
             "number": scene["number"],
             "label": choice["label"],
             "kind": choice["kind"],
+            "note": choice.get("note", ""),     # Mayeul is watching...
         })
 
         # 5) Final choice? Then apply the ending rules. Otherwise, next scene.
@@ -97,3 +98,9 @@ class Game:
     @property
     def is_over(self):
         return self.ending_id is not None
+
+    def notebook(self):
+        """Mayeul's notebook: his notes about each choice + his final verdict."""
+        notes = [step["note"] for step in self.history]
+        verdict = NOTEBOOK_VERDICTS[self.chaos]
+        return notes, verdict

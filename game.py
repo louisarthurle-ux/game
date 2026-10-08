@@ -11,6 +11,7 @@ How the project is organised:
     story.py     all the text (scenes, choices, endings)      = DATA
     engine.py    the rules (Chaos counter, ending rules)       = LOGIC
     game.py      this file: the window, HUD and drawings       = INTERFACE
+    sounds.py    music and sound effects                       = AUDIO
     terminal.py  the same game in the terminal                 = INTERFACE
 
 The graphics use tkinter, which comes with Python (nothing to install).
@@ -42,6 +43,7 @@ except ImportError:          # no graphics on this computer -> text version
     tk = None
 
 from engine import Game, MAX_CHAOS, TOTAL_CHOICES
+from sounds import SoundPlayer
 from story import CHARACTERS, ENDINGS, TRACKS, MENU_QUOTES
 
 
@@ -82,17 +84,18 @@ def faded(color):
     return mix(mix(color, f"#{grey:02x}{grey:02x}{grey:02x}", 0.65), COLORS["dim"], 0.3)
 
 
-def load_unlocked():
-    """Read the list of endings the player already found."""
+def load_save():
+    """Read the save file: the endings already found + sound ON/OFF."""
     try:
-        return set(json.loads(SAVE_FILE.read_text())["unlocked"])
-    except (OSError, ValueError, KeyError, TypeError):
-        return set()
+        data = json.loads(SAVE_FILE.read_text())
+        return set(data.get("unlocked", [])), bool(data.get("sound", True))
+    except (OSError, ValueError, AttributeError, TypeError):
+        return set(), True
 
 
-def save_unlocked(unlocked):
+def write_save(unlocked, sound_on):
     try:
-        SAVE_FILE.write_text(json.dumps({"unlocked": sorted(unlocked)}))
+        SAVE_FILE.write_text(json.dumps({"unlocked": sorted(unlocked), "sound": sound_on}))
     except OSError:
         pass  # not a problem: the game still works without saving
 
@@ -234,7 +237,7 @@ def draw_person(c, cx, look, outfit, dim=False, lift=0, shirt=None):
     # --- mouth
     mouth = look["mouth"]
     my = hy + 28
-    if mouth == "big_smile":     # Mr. Hargrove: the smile never moves
+    if mouth == "big_smile":     # Brieuc: the smile never moves
         c.create_arc(cx - 24, my - 22, cx + 24, my + 14, start=180, extent=180, style="chord",
                      fill=col("#5a1f1f"), outline="", tags=tags)
         c.create_rectangle(cx - 18, my - 4, cx + 18, my + 1, fill=col("#ffffff"),
@@ -488,27 +491,57 @@ class GameApp:
                                "DejaVu Sans", "Arial") if f in families), "Helvetica")
         serif = next((f for f in ("Georgia", "DejaVu Serif", "Times New Roman")
                       if f in families), "Times")
+        hand = next((f for f in ("Segoe Print", "Comic Sans MS", "Bradley Hand", "Noteworthy",
+                                 "Chalkboard SE", "Purisa", "Comic Neue") if f in families), None)
         self.F = {
             "title": (serif, 36, "bold"), "h1": (serif, 26, "bold"), "h2": (ui, 16, "bold"),
             "text": (ui, 15), "italic": (ui, 15, "italic"), "small": (ui, 11),
             "small_b": (ui, 11, "bold"), "btn": (ui, 14), "btn_b": (ui, 14, "bold"),
             "tiny": (ui, 9, "bold"), "hud_big": (ui, 16, "bold"),
+            # "handwriting" for Mayeul's notebook
+            "hand": (hand, 14) if hand else (serif, 14, "italic"),
+            "hand_big": (hand, 24, "bold") if hand else (serif, 24, "bold", "italic"),
         }
 
         self.game = Game()
-        self.unlocked = load_unlocked()
-        self.mode = "menu"        # menu / dialogue / choice / ending / screen
+        self.unlocked, sound_on = load_save()
+        self.sound = SoundPlayer(enabled=sound_on)
+        self.ending_is_new = False
+        self.mode = "menu"        # menu / dialogue / choice / notebook / ending / screen
         self.frame = 0            # increases every redraw (stops old animations)
         self.queue = []           # dialogue lines waiting to be shown
         self.when_done = None     # function to call when the queue is empty
         self.stage = None         # the scene or ending currently on screen
         self.typing = False
         self.type_job = None
+        self.nb_job = None        # the notebook animation
         self.button_count = 0
 
         root.bind("<Key>", self.on_key)
         self.c.bind("<Button-1>", self.on_click)
+        root.protocol("WM_DELETE_WINDOW", self.quit)   # stop the music when closing
+        self.sound_loop()
         self.show_menu()
+
+    def sound_loop(self):
+        """Twice per second: let the sound system restart the music if it ended."""
+        self.sound.update()
+        self.root.after(500, self.sound_loop)
+
+    def quit(self):
+        self.sound.close()
+        self.root.destroy()
+
+    def toggle_sound(self):
+        on = self.sound.toggle()
+        write_save(self.unlocked, on)
+        for item in self.c.find_withtag("sound_label"):
+            self.c.itemconfig(item, text="SOUND ON" if on else "SOUND OFF")
+
+    def sound_button(self, x0, y0, x1, y1):
+        tag, _ = self.button(x0, y0, x1, y1, "SOUND ON" if self.sound.enabled else "SOUND OFF",
+                             self.toggle_sound, font=self.F["small_b"])
+        self.c.addtag_withtag("sound_label", self.c.find_withtag(tag)[-1])
 
     # ------------------------------------------------------------------
     # BUTTONS (drawn on the canvas, with a hover effect)
@@ -522,22 +555,24 @@ class GameApp:
                                        tags=("btn", tag))
         self.c.create_text((x0 + x1) / 2, (y0 + y1) / 2, text=text, fill=COLORS["text"],
                            font=font or self.F["btn_b"], tags=("btn", tag))
-        self._hover(tag, rect, fill, command)
+        self._hover(tag, rect, fill, command, sound="click")
         return tag, rect
 
-    def _hover(self, tag, rect, fill, command):
+    def _hover(self, tag, rect, fill, command, sound=None):
         self.c.tag_bind(tag, "<Enter>", lambda e: (self.c.itemconfig(rect, fill=COLORS["hover"]),
                                                    self.c.config(cursor="hand2")))
         self.c.tag_bind(tag, "<Leave>", lambda e: (self.c.itemconfig(rect, fill=fill),
                                                    self.c.config(cursor="")))
-        self.c.tag_bind(tag, "<Button-1>", lambda e: command())
+        self.c.tag_bind(tag, "<Button-1>", lambda e: (sound and self.sound.effect(sound),
+                                                      command()))
 
     def clear(self):
         """Erase everything and stop old animations."""
         self.frame += 1
-        if self.type_job:
-            self.root.after_cancel(self.type_job)
-            self.type_job = None
+        for job in (self.type_job, self.nb_job):
+            if job:
+                self.root.after_cancel(job)
+        self.type_job = self.nb_job = None
         self.c.delete("all")
         self.c.config(cursor="")
 
@@ -547,6 +582,7 @@ class GameApp:
     def show_menu(self):
         self.clear()
         self.mode = "menu"
+        self.sound.music("music_menu")
         bg_reception(self.c, "10:25")
         draw_person(self.c, 650, CHARACTERS["you"]["look"], SHIRT_COLORS["white"],
                     dim=True, shirt="white")
@@ -566,7 +602,7 @@ class GameApp:
         items = [("NEW GAME", self.new_game, COLORS["accent"]),
                  (f"ENDINGS  ({found}/9)", self.show_gallery, None),
                  ("HOW TO PLAY", self.show_help, None),
-                 ("QUIT", self.root.destroy, None)]
+                 ("QUIT", self.quit, None)]
         for i, (label, cmd, color) in enumerate(items):
             y = 350 + i * 58
             self.button(60, y, 470, y + 46, label, cmd, color=color)
@@ -575,6 +611,7 @@ class GameApp:
                                 outline=CHARACTERS["mayeul"]["color"], width=2)
         self.c.create_text(760, 588, text=random.choice(MENU_QUOTES), width=450,
                            font=self.F["small"], fill=COLORS["text"], justify="center")
+        self.sound_button(890, 16, 1000, 50)
 
     def screen_panel(self, title):
         """A dark panel with a title, used by the help and gallery screens."""
@@ -592,7 +629,7 @@ class GameApp:
             "CONTROLS\n"
             "   Click, SPACE or ENTER  -  continue the dialogue\n"
             "   Click a button or press 1 / 2 / 3  -  make a choice\n"
-            "   ESC  -  back to the main menu\n\n"
+            "   ESC  -  back to the main menu        S  -  sound on / off\n\n"
             "THE RULES\n"
             "   Every story has exactly 5 choices.\n"
             "   Choice 1 picks your track:  A) Lie   B) Tell the truth   C) Run away\n"
@@ -602,6 +639,7 @@ class GameApp:
             "   Safe final choice                   ->  CALM ending\n"
             "   Bold final choice + Chaos 0 or 1    ->  MEDIUM ending\n"
             "   Bold final choice + Chaos 2 or 3    ->  WILD ending\n\n"
+            "Mayeul writes down everything you do. At the end, you can read his notebook.\n"
             "There are 9 endings. One of them is a secret. Mayeul knows which one."
         )
         self.c.create_rectangle(110, 90, 914, 556, fill=COLORS["panel"],
@@ -640,6 +678,7 @@ class GameApp:
     # PLAYING THE STORY
     # ------------------------------------------------------------------
     def new_game(self):
+        self.sound.music("music_game")
         self.game.reset()
         self.enter_scene()
 
@@ -666,6 +705,7 @@ class GameApp:
     def next_line(self):
         if self.queue:
             speaker, text = self.queue.pop(0)
+            self.sound.effect("blip")
             self.draw_frame(speaker)
             self.type_text(text)
         else:
@@ -717,7 +757,7 @@ class GameApp:
                            font=self.F["btn"], fill=COLORS["text"], tags=("btn", tag))
         self.c.create_text(x1 - 18, (y0 + y1) / 2, text=str(index + 1), font=self.F["h2"],
                            fill=COLORS["muted"], tags=("btn", tag))
-        self._hover(tag, rect, fill, lambda: self.pick(index))
+        self._hover(tag, rect, fill, lambda: self.pick(index), sound=None)
 
     def pick(self, index):
         """The player made a choice."""
@@ -726,7 +766,23 @@ class GameApp:
         choice = self.game.choose(index)      # the ENGINE applies the rules
         self.play_lines(choice["reaction"], self.after_choice)
         if choice.get("chaos"):
+            self.sound.effect("chaos")
             self.chaos_effect()
+        else:
+            self.sound.effect("select")
+        self.notebook_popup()
+
+    def notebook_popup(self):
+        """A little message: Mayeul is writing about you..."""
+        frame = self.frame
+        x, y = 20, HUD_H + 14
+        box = self.c.create_rectangle(x, y, x + 330, y + 34, fill=COLORS["panel"],
+                                      outline=CHARACTERS["mayeul"]["color"], width=2)
+        text = self.c.create_text(x + 14, y + 17, anchor="w", font=self.F["small_b"],
+                                  fill=CHARACTERS["mayeul"]["color"],
+                                  text="Mayeul writes something in his notebook...")
+        self.root.after(500, lambda: frame == self.frame and self.sound.effect("scribble"))
+        self.root.after(2500, lambda: self.c.delete(box, text))
 
     def after_choice(self):
         if self.game.is_over:
@@ -739,16 +795,88 @@ class GameApp:
     # ------------------------------------------------------------------
     def start_ending(self):
         self.stage = self.game.ending
-        self.play_lines(self.game.ending["lines"], self.show_ending_card)
+        self.play_lines(self.game.ending["lines"], self.finish_story)
 
-    def show_ending_card(self):
+    def finish_story(self):
+        """The story is over: save the ending, then show Mayeul's notebook."""
+        self.ending_is_new = self.game.ending_id not in self.unlocked
+        self.unlocked.add(self.game.ending_id)
+        write_save(self.unlocked, self.sound.enabled)
+        self.sound.stop_music()
+        self.show_notebook(self.show_ending_card)
+
+    # ------------------------------------------------------------------
+    # MAYEUL'S NOTEBOOK: his notes appear one by one, like handwriting
+    # ------------------------------------------------------------------
+    def show_notebook(self, then):
+        self.clear()
+        self.mode = "notebook"
+        self.notebook_then = then
+        c, ink = self.c, "#2b3a67"
+        # the desk and the page
+        c.create_rectangle(-20, -20, W + 20, H + 20, fill="#4a3426", outline="")
+        for y in range(0, H, 46):
+            c.create_line(0, y, W, y + 10, fill="#553c2c", width=3)
+        c.create_rectangle(198, 36, 838, 620, fill="#24180f", outline="")
+        c.create_rectangle(188, 26, 828, 610, fill="#fbf6e3", outline="#d8cfae")
+        for y in range(140, 600, 32):
+            c.create_line(188, y, 828, y, fill="#c9d8ea")
+        c.create_line(252, 26, 252, 610, fill="#e8a0a0", width=2)
+        for x in range(214, 812, 46):
+            c.create_oval(x, 14, x + 16, 38, fill="#b4b9c2", outline="#6b707a", width=2)
+        c.create_oval(276, 512, 380, 616, outline="#c8a27a", width=6)     # coffee ring
+        c.create_text(270, 74, anchor="w", text="MAYEUL'S NOTEBOOK", font=self.F["hand_big"],
+                      fill=ink)
+        c.create_text(272, 112, anchor="w", font=self.F["small"], fill="#6b6b6b",
+                      text="Observations, volume 7. Subject: the 10 o'clock interview.")
+
+        notes, verdict = self.game.notebook()
+        self.nb_lines = [(f"{i}. {note}", ink) for i, note in enumerate(notes, start=1)]
+        self.nb_lines.append((f"VERDICT: {verdict}", "#c0392b"))
+        self.nb_y = 150
+        self.nb_job = self.root.after(400, self.write_next_note)
+
+    def write_note(self):
+        """Write ONE line in the notebook (the last line is the verdict)."""
+        text, color = self.nb_lines.pop(0)
+        item = self.c.create_text(270, self.nb_y, anchor="nw", text=text, width=530,
+                                  font=self.F["hand"], fill=color)
+        bottom = self.c.bbox(item)[3]
+        if not self.nb_lines:                          # the verdict: underlined twice
+            for dy in (4, 9):
+                self.c.create_line(270, bottom + dy, 790, bottom + dy, fill=color, width=2)
+            bottom += 12
+        self.nb_y = bottom + 14
+
+    def write_next_note(self):
+        """Animation: one line every 0.7 seconds, with a scribble sound."""
+        self.write_note()
+        self.sound.effect("scribble")
+        if self.nb_lines:
+            self.nb_job = self.root.after(700, self.write_next_note)
+        else:
+            self.notebook_done()
+
+    def finish_notebook(self):
+        """Click during the animation: write everything at once."""
+        self.root.after_cancel(self.nb_job)
+        while self.nb_lines:
+            self.write_note()
+        self.notebook_done()
+
+    def notebook_done(self):
+        self.mode = "notebook_done"
+        self.c.create_text(780, self.nb_y + 6, anchor="e", text="- M.",
+                           font=self.F["hand_big"], fill="#2b3a67")
+        self.button(560, 556, 800, 596, "CONTINUE", self.notebook_then, color=COLORS["accent"])
+
+    def show_ending_card(self, jingle=True):
         game, ending = self.game, self.game.ending
-        is_new = game.ending_id not in self.unlocked
-        self.unlocked.add(game.ending_id)
-        save_unlocked(self.unlocked)
-
+        is_new = self.ending_is_new
         self.clear()
         self.mode = "ending"
+        if jingle:
+            self.sound.effect(f"ending_{ending['type']}")
         color = TYPE_COLORS[ending["type"]]
         self.c.create_rectangle(-20, -20, W + 20, H + 20, fill=COLORS["bg"], outline="")
         for _ in range(40):  # a few "confetti" squares
@@ -795,9 +923,16 @@ class GameApp:
 
         self.c.create_text(W / 2, 498, text=f"Endings found: {len(self.unlocked)} / 9",
                            font=self.F["small_b"], fill=COLORS["muted"])
-        self.button(150, 520, 380, 570, "PLAY AGAIN  (R)", self.new_game, color=COLORS["accent"])
-        self.button(397, 520, 627, 570, "ENDINGS", self.show_gallery)
-        self.button(644, 520, 874, 570, "MAIN MENU  (M)", self.show_menu)
+        buttons = [("PLAY AGAIN (R)", self.new_game, COLORS["accent"]),
+                   ("NOTEBOOK (N)", self.reopen_notebook, CHARACTERS["mayeul"]["color"]),
+                   ("ENDINGS", self.show_gallery, None),
+                   ("MAIN MENU (M)", self.show_menu, None)]
+        for i, (label, command, color) in enumerate(buttons):
+            x = 112 + i * 205
+            self.button(x, 520, x + 185, 570, label, command, color=color)
+
+    def reopen_notebook(self):
+        self.show_notebook(lambda: self.show_ending_card(jingle=False))
 
     # ------------------------------------------------------------------
     # DRAWING ONE FRAME OF THE STORY: background, characters, HUD, box
@@ -844,8 +979,8 @@ class GameApp:
                       fill=COLORS["track"])
 
         # centre: time + place
-        c.create_text(W / 2, 20, text=stage["time"], font=self.F["hud_big"], fill=COLORS["text"])
-        c.create_text(W / 2, 43, text=stage["location"], font=self.F["small"],
+        c.create_text(450, 20, text=stage["time"], font=self.F["hud_big"], fill=COLORS["text"])
+        c.create_text(450, 43, text=stage["location"], font=self.F["small"],
                       fill=COLORS["muted"])
 
         # right: choice progress (5 dots)
@@ -853,10 +988,10 @@ class GameApp:
         done = len(game.history)
         label = "ENDING" if in_ending else (
             "PROLOGUE" if number == 0 else f"CHOICE {number}/{TOTAL_CHOICES}")
-        c.create_text(690, 20, anchor="w", text=label, font=self.F["small_b"],
+        c.create_text(612, 20, anchor="w", text=label, font=self.F["small_b"],
                       fill=COLORS["text"])
         for i in range(TOTAL_CHOICES):
-            x = 696 + i * 18
+            x = 618 + i * 18
             if i < done:
                 c.create_oval(x - 6, 36, x + 6, 48, fill=COLORS["accent"], outline="")
             elif i == number - 1:
@@ -865,15 +1000,16 @@ class GameApp:
                 c.create_oval(x - 6, 36, x + 6, 48, fill=COLORS["border"], outline="")
 
         # right: CHAOS meter (3 pips)
-        c.create_text(808, 20, anchor="w", text=f"CHAOS {game.chaos}/{MAX_CHAOS}",
+        c.create_text(722, 20, anchor="w", text=f"CHAOS {game.chaos}/{MAX_CHAOS}",
                       font=self.F["small_b"], fill=COLORS["bold"] if game.chaos else COLORS["text"])
         for i in range(MAX_CHAOS):
-            x = 808 + i * 30
+            x = 722 + i * 30
             on = i < game.chaos
             c.create_rectangle(x, 34, x + 24, 48, outline="", tags="chaos_pip",
                                fill=COLORS["bold"] if on else COLORS["border"])
 
-        # menu button
+        # sound + menu buttons
+        self.sound_button(830, 14, 916, 46)
         self.button(926, 14, 1006, 46, "MENU", self.ask_menu, font=self.F["small_b"])
 
     def draw_box(self, speaker, question):
@@ -947,7 +1083,7 @@ class GameApp:
     def chaos_effect(self):
         """+1 CHAOS: the screen shakes and a red message flies up."""
         frame = self.frame
-        popup = self.c.create_text(890, 90, text="+1 CHAOS!", font=self.F["hud_big"],
+        popup = self.c.create_text(770, 90, text="+1 CHAOS!", font=self.F["hud_big"],
                                    fill=COLORS["bold"])
         offsets = [10, -10, 8, -8, 5, -5, 2, -2]
 
@@ -972,16 +1108,24 @@ class GameApp:
             return
         if self.mode == "dialogue":
             self.advance()
+        elif self.mode == "notebook":
+            self.finish_notebook()
 
     def on_key(self, event):
         key = event.keysym
-        if key == "Escape":
+        if event.char.lower() == "s":
+            self.toggle_sound()
+        elif key == "Escape":
             if self.mode in ("dialogue", "choice"):
                 self.ask_menu()
             elif self.mode != "menu":
                 self.show_menu()
         elif self.mode == "dialogue" and key in ("space", "Return", "KP_Enter", "Right"):
             self.advance()
+        elif self.mode == "notebook" and key in ("space", "Return", "KP_Enter"):
+            self.finish_notebook()
+        elif self.mode == "notebook_done" and key in ("space", "Return", "KP_Enter"):
+            self.notebook_then()
         elif self.mode == "choice" and event.char in ("1", "2", "3"):
             index = int(event.char) - 1
             if index < len(self.game.scene["choices"]):
@@ -992,6 +1136,8 @@ class GameApp:
             self.new_game()
         elif self.mode == "ending" and event.char.lower() == "m":
             self.show_menu()
+        elif self.mode == "ending" and event.char.lower() == "n":
+            self.reopen_notebook()
 
     def ask_menu(self):
         if messagebox.askyesno("Back to menu?",
