@@ -33,6 +33,7 @@ import json
 import math
 import random
 import sys
+import time
 from pathlib import Path
 
 try:
@@ -42,9 +43,9 @@ try:
 except ImportError:          # no graphics on this computer -> text version
     tk = None
 
-from engine import Game, MAX_CHAOS, TOTAL_CHOICES
+from engine import Game, MAX_CHAOS, TOTAL_CHOICES, TIMER_SECONDS, earned_achievements
 from sounds import SoundPlayer
-from story import CHARACTERS, ENDINGS, TRACKS, MENU_QUOTES
+from story import CHARACTERS, ENDINGS, TRACKS, MENU_QUOTES, ACHIEVEMENTS, DEFAULT_NAME
 
 
 # ===========================================================================
@@ -54,6 +55,8 @@ W, H = 1024, 640                 # window size
 HUD_H = 60                       # height of the HUD bar
 BOX = (24, 456, 1000, 624)       # dialogue box (left, top, right, bottom)
 TYPE_SPEED = 15                  # milliseconds between letters
+FADE_STEPS = ["gray12", "gray25", "gray50", "gray75", ""]   # "" = fully black
+FADE_SPEED = 45                  # milliseconds per step of a fade
 SAVE_FILE = Path.home() / ".job_interview_disaster_save.json"
 
 COLORS = {
@@ -85,19 +88,31 @@ def faded(color):
 
 
 def load_save():
-    """Read the save file: the endings already found + sound ON/OFF."""
+    """Read the save file: endings found, trophies, sound ON/OFF, last name."""
     try:
         data = json.loads(SAVE_FILE.read_text())
-        return set(data.get("unlocked", [])), bool(data.get("sound", True))
+        return {"unlocked": {int(n) for n in data.get("unlocked", [])},
+                "trophies": {t for t in data.get("trophies", []) if t in ACHIEVEMENTS},
+                "sound": bool(data.get("sound", True)),
+                "name": str(data.get("name", ""))[:16]}
     except (OSError, ValueError, AttributeError, TypeError):
-        return set(), True
+        return {"unlocked": set(), "trophies": set(), "sound": True, "name": ""}
 
 
-def write_save(unlocked, sound_on):
+def write_save(data):
     try:
-        SAVE_FILE.write_text(json.dumps({"unlocked": sorted(unlocked), "sound": sound_on}))
+        SAVE_FILE.write_text(json.dumps(data))
     except OSError:
         pass  # not a problem: the game still works without saving
+
+
+def draw_star(c, x, y, r, fill, tags=()):
+    """A 5-point star (for the trophies)."""
+    points = []
+    for i in range(10):
+        radius = r if i % 2 == 0 else r * 0.45
+        points += [x + radius * _sin(i * 36), y - radius * _cos(i * 36)]
+    c.create_polygon(points, fill=fill, outline="", tags=tags)
 
 
 # ===========================================================================
@@ -504,10 +519,14 @@ class GameApp:
         }
 
         self.game = Game()
-        self.unlocked, sound_on = load_save()
-        self.sound = SoundPlayer(enabled=sound_on)
+        save = load_save()
+        self.unlocked = save["unlocked"]      # endings found (numbers 1 to 9)
+        self.trophies = save["trophies"]      # trophies won (ids)
+        self.last_name = save["name"]         # the name typed last time
+        self.sound = SoundPlayer(enabled=save["sound"])
         self.ending_is_new = False
-        self.mode = "menu"        # menu / dialogue / choice / notebook / ending / screen
+        self.new_trophies = []    # trophies won at the end of the last story
+        self.mode = "menu"        # menu / name / dialogue / choice / notebook / ending / screen
         self.frame = 0            # increases every redraw (stops old animations)
         self.queue = []           # dialogue lines waiting to be shown
         self.when_done = None     # function to call when the queue is empty
@@ -515,6 +534,11 @@ class GameApp:
         self.typing = False
         self.type_job = None
         self.nb_job = None        # the notebook animation
+        self.timer_job = None     # the timer of the final decision
+        self.timer_paused = False
+        self.fading = False       # True during a fade (clicks are ignored)
+        self.toasts = []          # "TROPHY UNLOCKED" messages: [text, end time]
+        self.name_entry = None    # the text box where you type your name
         self.button_count = 0
 
         root.bind("<Key>", self.on_key)
@@ -532,9 +556,13 @@ class GameApp:
         self.sound.close()
         self.root.destroy()
 
+    def save_game(self):
+        write_save({"unlocked": sorted(self.unlocked), "trophies": sorted(self.trophies),
+                    "sound": self.sound.enabled, "name": self.last_name})
+
     def toggle_sound(self):
         on = self.sound.toggle()
-        write_save(self.unlocked, on)
+        self.save_game()
         for item in self.c.find_withtag("sound_label"):
             self.c.itemconfig(item, text="SOUND ON" if on else "SOUND OFF")
 
@@ -569,12 +597,83 @@ class GameApp:
     def clear(self):
         """Erase everything and stop old animations."""
         self.frame += 1
-        for job in (self.type_job, self.nb_job):
+        for job in (self.type_job, self.nb_job, self.timer_job):
             if job:
                 self.root.after_cancel(job)
-        self.type_job = self.nb_job = None
+        self.type_job = self.nb_job = self.timer_job = None
+        if self.name_entry:
+            self.name_entry.destroy()
+            self.name_entry = None
         self.c.delete("all")
         self.c.config(cursor="")
+        if self.toasts:                       # trophy messages stay on top
+            self.root.after_idle(self.draw_toasts)
+
+    # ------------------------------------------------------------------
+    # FADE TRANSITION: the screen goes black, changes, and comes back.
+    # A black rectangle with a "stipple" pattern (12%, 25%, 50%, 75%
+    # of the pixels) looks like it is getting darker, step by step.
+    # ------------------------------------------------------------------
+    def transition(self, draw_new_screen):
+        if self.fading:
+            return
+        self.fading = True
+
+        def fade_out(step=0):
+            self.c.delete("fade")
+            if step < len(FADE_STEPS):
+                self.fade_layer(FADE_STEPS[step])
+                self.root.after(FADE_SPEED, fade_out, step + 1)
+            else:
+                draw_new_screen()             # change the screen while it's black
+                fade_in(len(FADE_STEPS) - 1)
+
+        def fade_in(step):
+            self.c.delete("fade")
+            if step >= 0:
+                self.fade_layer(FADE_STEPS[step])
+                self.root.after(FADE_SPEED, fade_in, step - 1)
+            else:
+                self.fading = False
+
+        fade_out()
+
+    def fade_layer(self, stipple):
+        self.c.create_rectangle(-20, -20, W + 20, H + 20, fill="#000000", outline="",
+                                stipple=stipple, tags="fade")
+        self.c.tag_raise("fade")
+
+    # ------------------------------------------------------------------
+    # TROPHIES: check them, and show "TROPHY UNLOCKED" messages
+    # ------------------------------------------------------------------
+    def check_trophies(self, popup=True):
+        """Give the new trophies. Returns their titles."""
+        new = earned_achievements(self.game, self.unlocked) - self.trophies
+        titles = [ACHIEVEMENTS[t][0] for t in ACHIEVEMENTS if t in new]   # story.py order
+        self.trophies |= new
+        if new:
+            self.save_game()
+        if new and popup:
+            self.sound.effect("trophy")
+            self.toasts += [[title, time.time() + 4] for title in titles]
+            self.draw_toasts()
+            self.root.after(4100, self.draw_toasts)
+        return titles
+
+    def draw_toasts(self):
+        self.c.delete("toast")
+        self.toasts = [t for t in self.toasts if t[1] > time.time()]
+        for i, (title, _) in enumerate(self.toasts):
+            x0, y0 = W - 380, HUD_H + 52 + i * 58
+            tags = ("toast",)
+            self.c.create_rectangle(x0, y0, W - 20, y0 + 48, fill=COLORS["panel"],
+                                    outline=COLORS["accent"], width=2, tags=tags)
+            draw_star(self.c, x0 + 28, y0 + 25, 16, COLORS["accent"], tags)
+            self.c.create_text(x0 + 54, y0 + 15, anchor="w", text="TROPHY UNLOCKED",
+                               font=self.F["tiny"], fill=COLORS["accent"], tags=tags)
+            self.c.create_text(x0 + 54, y0 + 33, anchor="w", text=title,
+                               font=self.F["small_b"], fill=COLORS["text"], tags=tags)
+        self.c.tag_raise("toast")
 
     # ------------------------------------------------------------------
     # LAUNCHER SCREENS: main menu, how to play, endings gallery
@@ -599,13 +698,15 @@ class GameApp:
                            text="A dark comedy in five bad decisions")
 
         found = len(self.unlocked)
-        items = [("NEW GAME", self.new_game, COLORS["accent"]),
+        items = [("NEW GAME", lambda: self.transition(self.show_name_screen), COLORS["accent"]),
                  (f"ENDINGS  ({found}/9)", self.show_gallery, None),
+                 (f"TROPHIES  ({len(self.trophies)}/{len(ACHIEVEMENTS)})", self.show_trophies,
+                  None),
                  ("HOW TO PLAY", self.show_help, None),
                  ("QUIT", self.quit, None)]
         for i, (label, cmd, color) in enumerate(items):
-            y = 350 + i * 58
-            self.button(60, y, 470, y + 46, label, cmd, color=color)
+            y = 340 + i * 50
+            self.button(60, y, 470, y + 42, label, cmd, color=color)
 
         self.c.create_rectangle(520, 560, 1000, 616, fill=COLORS["panel"],
                                 outline=CHARACTERS["mayeul"]["color"], width=2)
@@ -629,7 +730,8 @@ class GameApp:
             "CONTROLS\n"
             "   Click, SPACE or ENTER  -  continue the dialogue\n"
             "   Click a button or press 1 / 2 / 3  -  make a choice\n"
-            "   ESC  -  back to the main menu        S  -  sound on / off\n\n"
+            "   ESC  -  back to the main menu        S  -  sound on / off\n"
+            "   The FINAL decision has a timer: 10 seconds, or Mayeul chooses for you.\n\n"
             "THE RULES\n"
             "   Every story has exactly 5 choices.\n"
             "   Choice 1 picks your track:  A) Lie   B) Tell the truth   C) Run away\n"
@@ -640,12 +742,12 @@ class GameApp:
             "   Bold final choice + Chaos 0 or 1    ->  MEDIUM ending\n"
             "   Bold final choice + Chaos 2 or 3    ->  WILD ending\n\n"
             "Mayeul writes down everything you do. At the end, you can read his notebook.\n"
-            "There are 9 endings. One of them is a secret. Mayeul knows which one."
+            "There are 9 endings and 12 trophies. One ending is a secret. Mayeul knows which one."
         )
-        self.c.create_rectangle(110, 90, 914, 556, fill=COLORS["panel"],
+        self.c.create_rectangle(90, 86, 934, 560, fill=COLORS["panel"],
                                 outline=COLORS["border"], width=2)
-        self.c.create_text(140, 112, anchor="nw", text=text, width=740,
-                           font=self.F["text"], fill=COLORS["text"])
+        self.c.create_text(118, 104, anchor="nw", text=text, width=790,
+                           font=(self.F["text"][0], 13), fill=COLORS["text"])
 
     def show_gallery(self):
         self.screen_panel(f"ENDINGS FOUND: {len(self.unlocked)} / 9")
@@ -674,10 +776,74 @@ class GameApp:
                 self.c.create_text(x0 + 146, y0 + 72, text=title, width=260, justify="center",
                                    font=self.F["h2"], fill=fill)
 
+    def show_trophies(self):
+        self.screen_panel(f"TROPHIES: {len(self.trophies)} / {len(ACHIEVEMENTS)}")
+        for i, (trophy, (title, description)) in enumerate(ACHIEVEMENTS.items()):
+            x0 = 52 + (i % 2) * 468
+            y0 = 88 + (i // 2) * 79
+            won = trophy in self.trophies
+            self.c.create_rectangle(x0, y0, x0 + 452, y0 + 68, fill=COLORS["panel"],
+                                    outline=COLORS["accent"] if won else COLORS["border"], width=2)
+            draw_star(self.c, x0 + 36, y0 + 34, 22, COLORS["accent"] if won else COLORS["border"])
+            self.c.create_text(x0 + 70, y0 + 22, anchor="w", text=title if won else "???",
+                               font=self.F["h2"], fill=COLORS["text"] if won else COLORS["muted"])
+            self.c.create_text(x0 + 70, y0 + 48, anchor="w", text=description,
+                               font=self.F["small"], fill=COLORS["muted"])
+
+    # ------------------------------------------------------------------
+    # YOUR NAME: Mayeul asks for it before the story starts
+    # ------------------------------------------------------------------
+    def show_name_screen(self):
+        self.clear()
+        self.mode = "name"
+        self.sound.music("music_game")
+        bg_reception(self.c, "10:25")
+        draw_person(self.c, 820, CHARACTERS["mayeul"]["look"], "#3a3f58", lift=10)
+
+        c = self.c
+        c.create_rectangle(60, 110, 620, 520, fill=COLORS["panel"], outline=COLORS["border"],
+                           width=2)
+        c.create_text(90, 150, anchor="w", text="SIGN IN, PLEASE", font=self.F["h1"],
+                      fill=COLORS["accent"])
+        c.create_rectangle(90, 186, 200, 214, fill=CHARACTERS["mayeul"]["color"], outline="")
+        c.create_text(145, 200, text="MAYEUL", font=self.F["small_b"], fill="#111111")
+        c.create_text(90, 230, anchor="nw", width=500, font=self.F["text"], fill=COLORS["text"],
+                      text="Name? Your real one, please. I'll know if you lie.")
+
+        # a real text box (tkinter Entry) placed on the canvas
+        self.name_var = tk.StringVar(value=self.last_name)
+        self.name_var.trace_add("write", lambda *args: self.name_var.set(self.name_var.get()[:16])
+                                if len(self.name_var.get()) > 16 else None)
+        self.name_entry = tk.Entry(self.c, textvariable=self.name_var, font=self.F["h2"],
+                                   justify="center", relief="flat", bg=COLORS["panel2"],
+                                   fg=COLORS["text"], insertbackground=COLORS["accent"],
+                                   highlightthickness=2, highlightcolor=COLORS["accent"],
+                                   highlightbackground=COLORS["border"])
+        c.create_window(340, 310, window=self.name_entry, width=460, height=48)
+        self.name_entry.focus_set()
+        self.name_entry.select_range(0, "end")
+        c.create_text(340, 356, text="Leave it empty and Mayeul will choose a name for you.",
+                      font=self.F["small"], fill=COLORS["muted"])
+        self.button(110, 400, 330, 450, "BACK", self.show_menu)
+        self.button(350, 400, 570, 450, "START  (ENTER)", self.submit_name,
+                    color=COLORS["accent"])
+
+    def submit_name(self):
+        name = " ".join(self.name_var.get().split())    # remove extra spaces
+        self.last_name = name
+        self.game.player_name = name or DEFAULT_NAME
+        self.save_game()
+        self.root.focus_set()                            # take the focus back from the box
+        self.transition(self.begin_story)
+
     # ------------------------------------------------------------------
     # PLAYING THE STORY
     # ------------------------------------------------------------------
     def new_game(self):
+        """PLAY AGAIN: same name, new story."""
+        self.transition(self.begin_story)
+
+    def begin_story(self):
         self.sound.music("music_game")
         self.game.reset()
         self.enter_scene()
@@ -693,7 +859,7 @@ class GameApp:
 
     def after_prologue(self):
         self.game.continue_story()
-        self.enter_scene()
+        self.transition(self.enter_scene)
 
     def play_lines(self, lines, when_done):
         """Put lines in the queue; call when_done() after the last one."""
@@ -707,7 +873,7 @@ class GameApp:
             speaker, text = self.queue.pop(0)
             self.sound.effect("blip")
             self.draw_frame(speaker)
-            self.type_text(text)
+            self.type_text(self.game.fill(text))         # {name} -> the player's name
         else:
             callback, self.when_done = self.when_done, None
             callback()
@@ -722,16 +888,56 @@ class GameApp:
     def show_choices(self):
         scene = self.game.scene
         self.mode = "choice"
-        self.draw_frame(None, question=scene["question"])
+        self.draw_frame(None, question=self.game.fill(scene["question"]))
 
         choices = scene["choices"]
         bw, bh, gap = 760, 58, 14
         total = len(choices) * bh + (len(choices) - 1) * gap
         y = BOX[1] - 26 - total
         x0 = W / 2 - bw / 2
+        if scene.get("final"):                  # the final decision has a timer
+            self.start_timer(x0, y - 50, x0 + bw)
         for i, choice in enumerate(choices):
             self.choice_button(x0, y, x0 + bw, y + bh, i, choice, scene)
             y += bh + gap
+
+    # ------------------------------------------------------------------
+    # THE TIMER (final decision only): 10 seconds, or Mayeul chooses BOLD
+    # ------------------------------------------------------------------
+    def start_timer(self, x0, y0, x1):
+        c = self.c
+        self.timer_left = TIMER_SECONDS * 10   # in tenths of a second
+        self.timer_frame = self.frame
+        c.create_rectangle(x0, y0 + 18, x1, y0 + 36, fill=COLORS["panel"],
+                           outline=COLORS["border"], width=2)
+        self.timer_box = (x0 + 3, y0 + 21, x1 - 3, y0 + 33)
+        self.timer_bar = c.create_rectangle(*self.timer_box, fill=COLORS["accent"], outline="")
+        c.create_rectangle(x0, y0 - 12, x0 + 330, y0 + 12, fill=COLORS["panel"], outline="")
+        self.timer_text = c.create_text(x0 + 10, y0, anchor="w", font=self.F["small_b"],
+                                        fill=COLORS["accent"])
+        self.timer_step()
+
+    def timer_step(self):
+        if self.frame != self.timer_frame or self.mode != "choice":
+            return                               # the player already chose
+        if not self.timer_paused:
+            if self.timer_left % 10 == 0:
+                self.sound.effect("timer")       # tick... tick... tick...
+            self.timer_left -= 1
+        seconds = math.ceil(self.timer_left / 10)
+        color = COLORS["bold"] if seconds <= 3 else COLORS["accent"]
+        x0, y0, x1, y1 = self.timer_box
+        self.c.coords(self.timer_bar, x0, y0,
+                      x0 + (x1 - x0) * self.timer_left / (TIMER_SECONDS * 10), y1)
+        self.c.itemconfig(self.timer_bar, fill=color)
+        self.c.itemconfig(self.timer_text, fill=color,
+                          text=f"MAYEUL IS GETTING IMPATIENT...  {seconds}")
+        if self.timer_left <= 0:                 # too late: Mayeul picks BOLD
+            choices = self.game.scene["choices"]
+            bold = next(i for i, ch in enumerate(choices) if ch["kind"] == "bold")
+            self.pick(bold, timed_out=True)
+        else:
+            self.timer_job = self.root.after(100, self.timer_step)
 
     def choice_button(self, x0, y0, x1, y1, index, choice, scene):
         kind = choice["kind"]
@@ -759,18 +965,24 @@ class GameApp:
                            fill=COLORS["muted"], tags=("btn", tag))
         self._hover(tag, rect, fill, lambda: self.pick(index), sound=None)
 
-    def pick(self, index):
-        """The player made a choice."""
-        if self.mode != "choice":
+    def pick(self, index, timed_out=False):
+        """The player made a choice (or the timer ended)."""
+        if self.mode != "choice" or self.fading:
             return
-        choice = self.game.choose(index)      # the ENGINE applies the rules
-        self.play_lines(choice["reaction"], self.after_choice)
+        choice = self.game.choose(index, timed_out)   # the ENGINE applies the rules
+        lines = list(choice["reaction"])
+        if timed_out:
+            lines.insert(0, ("mayeul", "Time's up, {name}. Too slow. I'll choose for you. "
+                                       "I always choose BOLD."))
+        self.play_lines(lines, self.after_choice)
         if choice.get("chaos"):
             self.sound.effect("chaos")
             self.chaos_effect()
         else:
             self.sound.effect("select")
         self.notebook_popup()
+        if not self.game.is_over:      # end-of-story trophies come after the ending
+            self.check_trophies()
 
     def notebook_popup(self):
         """A little message: Mayeul is writing about you..."""
@@ -786,9 +998,9 @@ class GameApp:
 
     def after_choice(self):
         if self.game.is_over:
-            self.start_ending()
+            self.transition(self.start_ending)
         else:
-            self.enter_scene()
+            self.transition(self.enter_scene)
 
     # ------------------------------------------------------------------
     # ENDINGS
@@ -801,9 +1013,10 @@ class GameApp:
         """The story is over: save the ending, then show Mayeul's notebook."""
         self.ending_is_new = self.game.ending_id not in self.unlocked
         self.unlocked.add(self.game.ending_id)
-        write_save(self.unlocked, self.sound.enabled)
+        self.save_game()
         self.sound.stop_music()
-        self.show_notebook(self.show_ending_card)
+        self.new_trophies = self.check_trophies(popup=False)   # shown on the ending card
+        self.transition(lambda: self.show_notebook(self.show_ending_card))
 
     # ------------------------------------------------------------------
     # MAYEUL'S NOTEBOOK: his notes appear one by one, like handwriting
@@ -828,7 +1041,8 @@ class GameApp:
         c.create_text(270, 74, anchor="w", text="MAYEUL'S NOTEBOOK", font=self.F["hand_big"],
                       fill=ink)
         c.create_text(272, 112, anchor="w", font=self.F["small"], fill="#6b6b6b",
-                      text="Observations, volume 7. Subject: the 10 o'clock interview.")
+                      text=f"Observations, volume 7. Subject: {self.game.player_name}, "
+                           "the 10 o'clock interview.")
 
         notes, verdict = self.game.notebook()
         self.nb_lines = [(f"{i}. {note}", ink) for i, note in enumerate(notes, start=1)]
@@ -868,7 +1082,8 @@ class GameApp:
         self.mode = "notebook_done"
         self.c.create_text(780, self.nb_y + 6, anchor="e", text="- M.",
                            font=self.F["hand_big"], fill="#2b3a67")
-        self.button(560, 556, 800, 596, "CONTINUE", self.notebook_then, color=COLORS["accent"])
+        self.button(560, 556, 800, 596, "CONTINUE", lambda: self.transition(self.notebook_then),
+                    color=COLORS["accent"])
 
     def show_ending_card(self, jingle=True):
         game, ending = self.game, self.game.ending
@@ -877,6 +1092,8 @@ class GameApp:
         self.mode = "ending"
         if jingle:
             self.sound.effect(f"ending_{ending['type']}")
+            if self.new_trophies:
+                self.root.after(1500, lambda: self.sound.effect("trophy"))
         color = TYPE_COLORS[ending["type"]]
         self.c.create_rectangle(-20, -20, W + 20, H + 20, fill=COLORS["bg"], outline="")
         for _ in range(40):  # a few "confetti" squares
@@ -895,9 +1112,12 @@ class GameApp:
         self.c.create_rectangle(W / 2 - 110, 180, W / 2 + 110, 216, fill=color, outline="")
         self.c.create_text(W / 2, 198, text=f"{ending['type'].upper()} ENDING",
                            font=self.F["h2"], fill="#111111")
-        if is_new:
-            self.c.create_text(W / 2, 236, text="NEW ENDING UNLOCKED!",
-                               font=self.F["small_b"], fill=COLORS["accent"])
+        news = ["NEW ENDING UNLOCKED!"] if is_new else []
+        if self.new_trophies:
+            news.append("NEW TROPHIES: " + ", ".join(self.new_trophies))
+        if news:
+            self.c.create_text(W / 2, 236, text="     *     ".join(news), width=820,
+                               font=self.F["small_b"], fill=COLORS["accent"], justify="center")
 
         # explain WHY the player got this ending (useful in class!)
         final_kind = game.history[-1]["kind"].upper()
@@ -906,8 +1126,8 @@ class GameApp:
         self.c.create_text(W / 2, 262, text=why, font=self.F["small"], fill=COLORS["text"])
 
         # the 5 choices of this playthrough
-        self.c.create_text(120, 296, anchor="w", text="YOUR PATH", font=self.F["small_b"],
-                           fill=COLORS["accent"])
+        self.c.create_text(120, 296, anchor="w", font=self.F["small_b"], fill=COLORS["accent"],
+                           text=f"THE PATH OF {game.player_name.upper()}")
         for i, step in enumerate(game.history):
             y = 324 + i * 32
             kind = step["kind"]
@@ -918,10 +1138,12 @@ class GameApp:
                                font=self.F["small_b"], fill=COLORS["muted"])
             self.c.create_rectangle(146, y - 11, 210, y + 11, fill=tcolor, outline="")
             self.c.create_text(178, y, text=tag, font=self.F["tiny"], fill="#111111")
-            self.c.create_text(224, y, anchor="w", text=step["label"], font=self.F["small"],
+            label = step["label"] + ("   (too slow: Mayeul chose)" if step["timed_out"] else "")
+            self.c.create_text(224, y, anchor="w", text=label, font=self.F["small"],
                                fill=COLORS["text"])
 
-        self.c.create_text(W / 2, 498, text=f"Endings found: {len(self.unlocked)} / 9",
+        self.c.create_text(W / 2, 498, text=f"Endings found: {len(self.unlocked)} / 9     |     "
+                           f"Trophies: {len(self.trophies)} / {len(ACHIEVEMENTS)}",
                            font=self.F["small_b"], fill=COLORS["muted"])
         buttons = [("PLAY AGAIN (R)", self.new_game, COLORS["accent"]),
                    ("NOTEBOOK (N)", self.reopen_notebook, CHARACTERS["mayeul"]["color"]),
@@ -1025,6 +1247,8 @@ class GameApp:
         else:
             ch = CHARACTERS[speaker]
             name, role, color = ch["name"].upper(), ch["role"], ch["color"]
+            if speaker == "you":
+                name = self.game.player_name.upper()
 
         if name:   # the name plate above the box, and the role next to it
             label = c.create_text(x0 + 40, y0 - 5, anchor="w", text=name, font=self.F["h2"],
@@ -1104,7 +1328,7 @@ class GameApp:
     def on_click(self, event):
         # clicks on buttons are handled by the buttons themselves
         current = self.c.find_withtag("current")
-        if current and "btn" in self.c.gettags(current[0]):
+        if self.fading or (current and "btn" in self.c.gettags(current[0])):
             return
         if self.mode == "dialogue":
             self.advance()
@@ -1113,7 +1337,14 @@ class GameApp:
 
     def on_key(self, event):
         key = event.keysym
-        if event.char.lower() == "s":
+        if self.fading:
+            return
+        if self.mode == "name":                 # typing your name: only ENTER / ESC
+            if key in ("Return", "KP_Enter"):
+                self.submit_name()
+            elif key == "Escape":
+                self.show_menu()
+        elif event.char.lower() == "s":
             self.toggle_sound()
         elif key == "Escape":
             if self.mode in ("dialogue", "choice"):
@@ -1125,13 +1356,13 @@ class GameApp:
         elif self.mode == "notebook" and key in ("space", "Return", "KP_Enter"):
             self.finish_notebook()
         elif self.mode == "notebook_done" and key in ("space", "Return", "KP_Enter"):
-            self.notebook_then()
+            self.transition(self.notebook_then)
         elif self.mode == "choice" and event.char in ("1", "2", "3"):
             index = int(event.char) - 1
             if index < len(self.game.scene["choices"]):
                 self.pick(index)
         elif self.mode == "menu" and key in ("Return", "space"):
-            self.new_game()
+            self.transition(self.show_name_screen)
         elif self.mode == "ending" and event.char.lower() == "r":
             self.new_game()
         elif self.mode == "ending" and event.char.lower() == "m":
@@ -1140,9 +1371,12 @@ class GameApp:
             self.reopen_notebook()
 
     def ask_menu(self):
-        if messagebox.askyesno("Back to menu?",
+        self.timer_paused = True                 # the timer waits for your answer
+        leave = messagebox.askyesno("Back to menu?",
                                "Go back to the main menu?\nThis story will be lost. "
-                               "Mayeul will pretend he didn't see anything."):
+                               "Mayeul will pretend he didn't see anything.")
+        self.timer_paused = False
+        if leave:
             self.show_menu()
 
 

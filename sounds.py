@@ -158,43 +158,48 @@ def make_music_game(path):
 
 # --- the sound effects ----------------------------------------------------
 def make_effects(folder):
+    """Create the sound effects (only the files that are missing)."""
+    def save(track, name, volume):
+        if not (folder / name).exists():       # never replace YOUR sounds
+            track.save(folder / name, volume)
+
     t = Track(0.05)
     t.add(0, piano(1320, 0.05, 0.3, 60))
-    t.save(folder / "blip.wav", 0.35)                  # new line of dialogue
+    save(t, "blip.wav", 0.35)                  # new line of dialogue
 
     t = Track(0.12)
     t.add(0, piano(880, 0.12, 0.3, 30))
-    t.save(folder / "click.wav", 0.5)                  # menu buttons
+    save(t, "click.wav", 0.5)                  # menu buttons
 
     t = Track(0.3)
     t.add(0, piano(note("E5"), 0.2, 0.3, 15))
     t.add(0.08, piano(note("B5"), 0.22, 0.3, 12))
-    t.save(folder / "select.wav", 0.6)                 # you made a choice
+    save(t, "select.wav", 0.6)                 # you made a choice
 
     t = Track(2.0)                                     # +1 CHAOS: sad trombone
     for i, name in enumerate(["G3", "F#3", "F3"]):
         t.add(i * 0.35, buzzy(note(name), 0.4, 0.3))
     t.add(1.05, buzzy(note("E3"), 0.9, 0.3, vibrato=0.03))
-    t.save(folder / "chaos.wav", 0.7)
+    save(t, "chaos.wav", 0.7)
 
     t = Track(0.7)                                     # Mayeul writes
     for i in range(5):
         t.add(i * 0.13, noise(0.1, 0.4))
-    t.save(folder / "scribble.wav", 0.45)
+    save(t, "scribble.wav", 0.45)
 
     t = Track(2.2)                                     # calm ending
     for i, name in enumerate(["C5", "E5", "G5"]):
         t.add(i * 0.15, piano(note(name), 1.5, 0.25, 2.5))
     for name in ("C4", "E4", "G4", "C5"):
         t.add(0.5, piano(note(name), 1.7, 0.2, 2.0))
-    t.save(folder / "ending_calm.wav", 0.7)
+    save(t, "ending_calm.wav", 0.7)
 
     t = Track(2.2)                                     # medium: 'ta-da'... ish
     for i, name in enumerate(["C5", "E5", "G5"]):
         t.add(i * 0.12, piano(note(name), 0.4, 0.25, 5))
     for name in ("G#3", "C4", "D#4", "G#4"):           # an unexpected chord
         t.add(0.42, piano(note(name), 1.7, 0.22, 2.0))
-    t.save(folder / "ending_medium.wav", 0.7)
+    save(t, "ending_medium.wav", 0.7)
 
     t = Track(2.6)                                     # wild: total chaos
     names = ["C4", "E4", "G4", "C5", "E5", "G5", "C6", "G5", "D#5", "C5", "F#4", "C4"]
@@ -203,12 +208,23 @@ def make_effects(folder):
     for name in ("C3", "F#3", "C4", "C#4", "G4"):     # a horrible cluster
         t.add(0.9, buzzy(note(name), 1.4, 0.12, vibrato=0.02))
     t.add(0.9, noise(1.2, 0.3))
-    t.save(folder / "ending_wild.wav", 0.7)
+    save(t, "ending_wild.wav", 0.7)
+
+    t = Track(0.12)                                    # the final-choice timer
+    t.add(0, piano(1760, 0.1, 0.3, 40))
+    save(t, "timer.wav", 0.6)
+
+    t = Track(1.3)                                     # trophy unlocked!
+    for i, name in enumerate(["G5", "C6", "E6", "G6"]):
+        t.add(i * 0.08, piano(note(name), 0.9, 0.22, 4))
+    t.add(0.32, noise(0.5, 0.08))
+    save(t, "trophy.wav", 0.6)
 
 
 MAKERS = {"music_menu.wav": make_music_menu, "music_game.wav": make_music_game}
 EFFECTS = ["blip.wav", "click.wav", "select.wav", "chaos.wav", "scribble.wav",
-           "ending_calm.wav", "ending_medium.wav", "ending_wild.wav"]
+           "ending_calm.wav", "ending_medium.wav", "ending_wild.wav", "timer.wav",
+           "trophy.wav"]
 
 
 def sound_folder():

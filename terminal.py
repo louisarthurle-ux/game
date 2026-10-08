@@ -6,26 +6,30 @@ Run it with:   python game.py --terminal
 """
 
 import textwrap
+import time
 
-from engine import Game, MAX_CHAOS, TOTAL_CHOICES
-from story import CHARACTERS, TRACKS
+from engine import Game, MAX_CHAOS, TOTAL_CHOICES, TIMER_SECONDS, earned_achievements
+from story import CHARACTERS, TRACKS, ACHIEVEMENTS, DEFAULT_NAME
 
 WIDTH = 72  # maximum width of a line of text
 
 
-def say(speaker, text):
+def say(game, speaker, text):
     """Print one line of dialogue, nicely wrapped."""
+    text = game.fill(text)                    # {name} -> the player's name
     if speaker is None:                       # the narrator
         print(textwrap.fill(text, WIDTH))
     else:
         name = CHARACTERS[speaker]["name"].upper()
+        if speaker == "you":
+            name = game.player_name.upper()
         print(textwrap.fill(f"{name}: {text}", WIDTH, subsequent_indent="    "))
 
 
-def play_lines(lines):
+def play_lines(game, lines):
     """Show a list of lines. The player presses Enter to continue."""
     for speaker, text in lines:
-        say(speaker, text)
+        say(game, speaker, text)
         input("   ...")
 
 
@@ -52,30 +56,42 @@ def ask(choices):
         print("  Please type a number from the list. Mayeul is sighing.")
 
 
-def play_once():
+def play_once(name, trophies, endings_found):
     game = Game()
+    game.player_name = name
     print("\n" + "THE JOB INTERVIEW DISASTER".center(WIDTH) + "\n")
 
     while not game.is_over:
         scene = game.scene
         if not scene["choices"]:              # prologue: no choice
-            play_lines(scene["lines"])
+            play_lines(game, scene["lines"])
             game.continue_story()
             continue
 
         hud(game)
-        play_lines(scene["lines"])
-        print("\n" + scene["question"])
+        play_lines(game, scene["lines"])
+        print("\n" + game.fill(scene["question"]))
+        timed_out = False
+        if scene.get("final"):
+            print(f"  (Quick! You have {TIMER_SECONDS} seconds, or Mayeul chooses for you.)")
+        start = time.time()
         index = ask(scene["choices"])
-        choice = game.choose(index)
+        if scene.get("final") and time.time() - start > TIMER_SECONDS:
+            timed_out = True                  # too slow: Mayeul picks BOLD
+            index = [c["kind"] for c in scene["choices"]].index("bold")
+        choice = game.choose(index, timed_out)
+        reaction = list(choice["reaction"])
+        if timed_out:
+            reaction.insert(0, ("mayeul", "Time's up, {name}. Too slow. I chose for you. "
+                                          "I always choose BOLD."))
         if choice.get("chaos"):
             print("  >>> +1 CHAOS <<<")
-        play_lines(choice["reaction"])
+        play_lines(game, reaction)
         print()
 
     ending = game.ending
     print("=" * WIDTH)
-    play_lines(ending["lines"])
+    play_lines(game, ending["lines"])
 
     # Mayeul's notebook
     notes, verdict = game.notebook()
@@ -89,11 +105,25 @@ def play_once():
     print(f" Type: {ending['type'].upper()}   Final Chaos: {game.chaos}/{MAX_CHAOS}")
     print("=" * WIDTH)
 
+    # trophies
+    endings_found.add(game.ending_id)
+    for trophy in ACHIEVEMENTS:
+        if trophy in earned_achievements(game, endings_found) - trophies:
+            trophies.add(trophy)
+            print(f" *** TROPHY UNLOCKED: {ACHIEVEMENTS[trophy][0]} - "
+                  f"{ACHIEVEMENTS[trophy][1]}")
+    print(f" Trophies: {len(trophies)}/{len(ACHIEVEMENTS)}")
+
 
 def main():
+    trophies, endings_found = set(), set()
     try:
+        name = " ".join(input("MAYEUL: Name? Your real one, please. ").split())[:16]
+        if not name:
+            name = DEFAULT_NAME
+            print(f"MAYEUL: No name? Fine. You are '{name}' now.")
         while True:
-            play_once()
+            play_once(name, trophies, endings_found)
             again = input("\nPlay again? (y/n) ").strip().lower()
             if not again.startswith("y"):
                 break

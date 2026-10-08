@@ -11,6 +11,8 @@ Everything goes wrong on the day of your job interview. Your alarm didn't ring, 
 | ![Story](screenshots/story.png) | ![Choice](screenshots/choice.png) |
 | **Mayeul's notebook** | **Ending card** |
 | ![Notebook](screenshots/notebook.png) | ![Ending](screenshots/ending.png) |
+| **Sign in with your name** | **The final decision has a timer** |
+| ![Name](screenshots/name.png) | ![Timer](screenshots/timer.png) |
 
 ---
 
@@ -34,6 +36,7 @@ You only need **Python 3** (download it from https://www.python.org). There's no
 | Continue the dialogue | Click anywhere | `SPACE` or `ENTER` |
 | Make a choice | Click a button | `1`, `2` or `3` |
 | Back to the menu | **MENU** button | `ESC` |
+| Type your name | Click **START** | `ENTER` |
 | Sound ON / OFF | **SOUND** button | `S` |
 | Mayeul's notebook | Click to write everything at once | `SPACE` / `ENTER` |
 | On the ending screen | Buttons | `R` = play again, `N` = notebook, `M` = menu |
@@ -98,6 +101,24 @@ The app will be in the `dist/` folder.
 
 ---
 
+## Your name
+
+When you start a new game, Mayeul asks for your name ("Your real one, please. I'll know if you lie."). The characters use it in the story, it appears on your name plate, in Mayeul's notebook and on the ending card. If you leave it empty, Mayeul calls you **Candidate 47**. In `story.py`, `{name}` in a line is replaced by your name.
+
+## The timer
+
+The **final decision** (choice 5) has a **10-second timer**: *"MAYEUL IS GETTING IMPATIENT..."*. The clock ticks, and the bar turns red for the last 3 seconds. If time runs out, Mayeul chooses for you, and he always chooses **BOLD**. The timer pauses while the "back to menu?" window is open. You can change the time with `TIMER_SECONDS` in `engine.py`.
+
+## Trophies
+
+There are **12 trophies** to collect, for example *Agent of Chaos* (reach 3/3 Chaos), *R.I.P. Mr. Bubbles* (blame your goldfish), *Frozen* (let the timer run out) or *Completionist* (find all 9 endings). A message appears when you win one. See them all in **TROPHIES** in the main menu. The game remembers your trophies between games.
+
+![Trophies](screenshots/trophies.png)
+
+## Fade transitions
+
+Between scenes, the screen fades to black and back. Tkinter can't make things transparent, so the trick is a black rectangle with a **stipple** pattern: 12%, then 25%, 50% and 75% of its pixels are black, then all of them. It looks like the screen is getting darker. (On a Mac, the pattern isn't supported, so you see a short cut to black instead.)
+
 ## Mayeul's notebook
 
 Mayeul writes down everything you do. After each choice, a message says *"Mayeul writes something in his notebook..."*. At the end of the story, you can read his notebook: one sarcastic note for each of your 5 choices, and a final **verdict** that depends on your Chaos score. For example:
@@ -157,8 +178,15 @@ def get_ending_type(final_choice_is_bold, chaos):
 
 When the player clicks a choice, `Game.choose()`:
 1. adds the choice's Chaos points (`self.chaos += choice["chaos"]`),
-2. remembers the track (A, B or C), the shirt (white, orange or pink) and Mayeul's note,
+2. remembers the track (A, B or C), the shirt (white, orange or pink) and Mayeul's note (and if the timer ran out),
 3. either goes to the `"next"` scene, or, if it was the final choice, finds the ending with `get_ending_type()`.
+
+The function `earned_achievements()` checks the trophies with simple `if` tests, for example:
+
+```python
+if game.chaos == MAX_CHAOS:
+    earned.add("agent_of_chaos")
+```
 
 ### 3. The interface (`game.py`)
 

@@ -12,6 +12,7 @@ to correct and to explain:
 A line of dialogue is a tuple:  (speaker, text)
     speaker = None        -> the narrator is talking
     speaker = "mayeul"    -> a key from the CHARACTERS dictionary
+    {name} in a text is replaced by the player's name.
 
 A choice is a dictionary:
     "label"    -> the text on the button
@@ -133,6 +134,7 @@ SCENES = {
             (None, "A sign on the wall says: WELCOME TO THE SYNERGIX FAMILY! Under it, someone has written in pencil: 'help'."),
             (None, "The receptionist, Mayeul, looks at you. Then at the stain. Then at the clock. Then back at the stain."),
             ("mayeul", "You're the 10 o'clock interview?"),
+            ("mayeul", "{name}. Yes, you're on my list. Next to the word 'late'."),
             ("mayeul", "It's 10:25. Here at Synergix, that's not late. That's a lifestyle choice."),
         ],
         "question": "Mayeul is waiting. So is your future. What do you do?",
@@ -214,7 +216,7 @@ SCENES = {
         "lines": [
             (None, "A man walks in. Big smile. Small notebook. The smile never moves. The pen never stops."),
             ("brieuc", "Hello, hello! I'm Brieuc, Head of Human Resources and Happiness! Just Brieuc. No 'Mister'. We're a family here."),
-            ("brieuc", "Mayeul told me everything. You poor thing. At Synergix we're a family, so your pain is our pain."),
+            ("brieuc", "Mayeul told me everything, {name}. You poor thing. At Synergix we're a family, so your pain is our pain."),
             ("brieuc", "So tell me... how is the patient doing?"),
             (None, "He is already writing. You haven't said anything yet."),
         ],
@@ -358,7 +360,7 @@ SCENES = {
         "cast": ["you", "brieuc"],
         "lines": [
             (None, "Brieuc takes you to the interview room. Big smile. Small notebook. He never stops smiling, and he never stops writing."),
-            ("brieuc", "Hello! I'm Brieuc, Head of Human Resources and Happiness. Mayeul says you're honest! We love honest people. They're so easy to write about."),
+            ("brieuc", "Hello, {name}! I'm Brieuc, Head of Human Resources and Happiness. Mayeul says you're honest! We love honest people. They're so easy to write about."),
             ("brieuc", "Let's start with a classic. Tell me about a time you failed."),
         ],
         "question": "Which failure do you share?",
@@ -431,7 +433,7 @@ SCENES = {
             (None, "Suddenly, the door opens. The temperature drops by five degrees. Brieuc stands up very fast."),
             (None, "It's Mrs. Doe, the CEO. You know her. She was your English teacher at school."),
             (None, "On your Year 9 report, she wrote: 'Will never amount to anything. Also, please stop writing \"gonna\".'"),
-            ("doe", "Well, well, well. Look who's here. Late, I imagine."),
+            ("doe", "Well, well, well. {name}. Look who's here. Late, I imagine."),
             ("brieuc", "Mrs. Doe! Do you... know our candidate?"),
         ],
         "question": "FINAL DECISION. Your old teacher is staring at you.",
@@ -505,7 +507,7 @@ SCENES = {
         "cast": ["you", "mum"],
         "lines": [
             (None, "Your phone rings. The screen says: MUM. Of course. Mothers can feel failure from 200 kilometres away."),
-            ("mum", "Sweetie! So? How was the interview? Did they love you?"),
+            ("mum", "{name}, sweetie! So? How was the interview? Did they love you?"),
             ("mum", "Your cousin Kevin got a job at a bank, you know. He has a parking space. With his name on it."),
         ],
         "question": "What do you tell Mum?",
@@ -738,7 +740,7 @@ ENDINGS = {
             (None, "You follow the man to the grey building. At the door, he stops and turns his lanyard around."),
             (None, "It says: SYNERGIX SOLUTIONS - Head of Special Recruitment."),
             (None, "In a window on the second floor, someone is waving at you. Slowly. Without smiling. It's Mayeul."),
-            ("mayeul", "Congratulations. The alarm, the train, the coffee... even your mum's call. That was all us."),
+            ("mayeul", "Congratulations, {name}. The alarm, the train, the coffee... even your mum's call. That was all us."),
             ("you", "My MUM?!"),
             ("mayeul", "She was very professional. We paid her in cake."),
             ("man", "Stage 1: Chaos Resistance. You passed. Most people just go home and cry."),
@@ -765,6 +767,26 @@ NOTEBOOK_VERDICTS = {
     2: "Chaos 2/3. A walking HR incident. I'm starting to like you.",
     3: "Chaos 3/3. Pure chaos. Synergix needs people like you. That is not a compliment.",
 }
+
+
+# TROPHIES (achievements). The conditions are checked in engine.py.
+ACHIEVEMENTS = {
+    "first_day":        ("First Day",          "Finish the story once."),
+    "beige_paint":      ("Beige Paint",        "Choose SAFE every single time."),
+    "agent_of_chaos":   ("Agent of Chaos",     "Reach 3/3 Chaos."),
+    "frozen":           ("Frozen",             "Let the timer run out. Mayeul chose for you."),
+    "fashion_victim":   ("Fashion Victim",     "Change your shirt."),
+    "rip_mr_bubbles":   ("R.I.P. Mr. Bubbles", "Blame your goldfish."),
+    "reply_all":        ("Reply All",          "Tell HR about your love letter."),
+    "liar_liar":        ("Liar, Liar",         "Lie to your mum."),
+    "chaos_resistance": ("Chaos Resistance",   "Find the secret ending."),
+    "tourist":          ("Tourist",            "Finish all three tracks: Lie, Truth and Run away."),
+    "wild_child":       ("Wild Child",         "Find the three Wild endings."),
+    "completionist":    ("Completionist",      "Find all 9 endings."),
+}
+
+# Mayeul chooses a name for you if you don't give one.
+DEFAULT_NAME = "Candidate 47"
 
 
 # Random sarcastic lines for the main menu.

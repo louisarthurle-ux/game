@@ -6,10 +6,12 @@ The graphical version (game.py) and the terminal version (terminal.py)
 both use this same class, so the rules are written only once.
 """
 
-from story import SCENES, ENDINGS, TRACKS, FIRST_SCENE, NOTEBOOK_VERDICTS
+from story import (SCENES, ENDINGS, TRACKS, FIRST_SCENE, NOTEBOOK_VERDICTS,
+                   DEFAULT_NAME)
 
 MAX_CHAOS = 3        # 3 Bold choices possible (choices 2, 3 and 4)
 TOTAL_CHOICES = 5    # every path has exactly 5 choices
+TIMER_SECONDS = 10   # time for the final decision
 
 
 def get_ending_type(final_choice_is_bold, chaos):
@@ -30,6 +32,7 @@ class Game:
     """Keeps the state of one playthrough."""
 
     def __init__(self):
+        self.player_name = DEFAULT_NAME   # kept when you play again
         self.reset()
 
     def reset(self):
@@ -50,8 +53,13 @@ class Game:
         """For scenes without a choice (the prologue): go to the next one."""
         self.scene_id = self.scene["next"]
 
-    def choose(self, index):
+    def fill(self, text):
+        """Put the player's name in a text: "Hello {name}" -> "Hello Lucie"."""
+        return text.replace("{name}", self.player_name)
+
+    def choose(self, index, timed_out=False):
         """The player picks choice number `index` (0, 1 or 2).
+        timed_out=True means the timer ended and Mayeul chose for the player.
 
         Updates the Chaos counter, the track and the shirt, then moves to the
         next scene OR decides the ending. Returns the chosen choice so the
@@ -72,11 +80,16 @@ class Game:
             self.shirt = choice["shirt"]
 
         # 4) Remember the choice (we show the full path at the end).
+        note = choice.get("note", "")         # Mayeul is watching...
+        if timed_out:
+            note = "Too slow. I chose for them. " + note
         self.history.append({
+            "scene": self.scene_id,
             "number": scene["number"],
             "label": choice["label"],
             "kind": choice["kind"],
-            "note": choice.get("note", ""),     # Mayeul is watching...
+            "note": note,
+            "timed_out": timed_out,
         })
 
         # 5) Final choice? Then apply the ending rules. Otherwise, next scene.
@@ -101,6 +114,45 @@ class Game:
 
     def notebook(self):
         """Mayeul's notebook: his notes about each choice + his final verdict."""
-        notes = [step["note"] for step in self.history]
+        notes = [self.fill(step["note"]) for step in self.history]
         verdict = NOTEBOOK_VERDICTS[self.chaos]
         return notes, verdict
+
+
+def earned_achievements(game, endings_found):
+    """Return the set of trophies (ids from story.ACHIEVEMENTS) this game earns.
+    endings_found = all the endings the player has ever found."""
+    earned = set()
+    kind = {step["scene"]: step["kind"] for step in game.history}
+
+    # trophies you can win in the middle of the story
+    if game.chaos == MAX_CHAOS:
+        earned.add("agent_of_chaos")
+    if game.shirt != "white":
+        earned.add("fashion_victim")
+    if kind.get("A1") == "bold":
+        earned.add("rip_mr_bubbles")
+    if kind.get("B2") == "bold":
+        earned.add("reply_all")
+    if kind.get("C2") == "bold":
+        earned.add("liar_liar")
+    if any(step["timed_out"] for step in game.history):
+        earned.add("frozen")
+
+    # trophies for the end of the story
+    if game.is_over:
+        earned.add("first_day")
+        if all(step["kind"] in ("track", "safe") for step in game.history):
+            earned.add("beige_paint")
+        if game.ending_id == 9:
+            earned.add("chaos_resistance")
+
+    # trophies for collecting endings (over many games)
+    tracks_done = {ENDINGS[number]["track"] for number in endings_found}
+    if tracks_done == {"A", "B", "C"}:
+        earned.add("tourist")
+    if {3, 6, 9} <= set(endings_found):
+        earned.add("wild_child")
+    if len(endings_found) == len(ENDINGS):
+        earned.add("completionist")
+    return earned
