@@ -788,6 +788,10 @@ ACHIEVEMENTS = {
 # Mayeul chooses a name for you if you don't give one.
 DEFAULT_NAME = "Candidate 47"
 
+# When the timer of the final decision runs out:
+TIMEOUT_LINE = ("mayeul", "Time's up, {name}. Too slow. I'll choose for you. I always choose BOLD.")
+TOO_SLOW_NOTE = "Too slow. I chose for them."
+
 
 # Random sarcastic lines for the main menu.
 MENU_QUOTES = [

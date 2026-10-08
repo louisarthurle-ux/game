@@ -8,21 +8,23 @@ Run it with:   python game.py --terminal
 import textwrap
 import time
 
+import i18n
 from engine import Game, MAX_CHAOS, TOTAL_CHOICES, TIMER_SECONDS, earned_achievements
-from story import CHARACTERS, TRACKS, ACHIEVEMENTS, DEFAULT_NAME
+from i18n import t
+from story import CHARACTERS, TRACKS, ACHIEVEMENTS, DEFAULT_NAME, TIMEOUT_LINE
 
 WIDTH = 72  # maximum width of a line of text
 
 
 def say(game, speaker, text):
     """Print one line of dialogue, nicely wrapped."""
-    text = game.fill(text)                    # {name} -> the player's name
+    text = game.fill(t(text))                 # translate + {name} -> the player's name
     if speaker is None:                       # the narrator
         print(textwrap.fill(text, WIDTH))
     else:
-        name = CHARACTERS[speaker]["name"].upper()
+        name = t(CHARACTERS[speaker]["name"]).upper()
         if speaker == "you":
-            name = game.player_name.upper()
+            name = game.display_name.upper()
         print(textwrap.fill(f"{name}: {text}", WIDTH, subsequent_indent="    "))
 
 
@@ -36,30 +38,30 @@ def play_lines(game, lines):
 def hud(game):
     """A small text HUD: choice number, Chaos meter and track."""
     scene = game.scene
-    track = TRACKS[game.track]["name"] if game.track else "-"
+    track = t(TRACKS[game.track]["name"]) if game.track else "-"
     meter = "#" * game.chaos + "." * (MAX_CHAOS - game.chaos)
     print("=" * WIDTH)
-    print(f" CHOICE {scene['number']}/{TOTAL_CHOICES}   CHAOS [{meter}]   "
-          f"TRACK: {track}   {scene['time']} {scene['location']}")
+    print(" " + t("CHOICE {number}/{total}").format(number=scene["number"], total=TOTAL_CHOICES)
+          + f"   [{meter}]   {track}   {t(scene['time'])} {t(scene['location'])}")
     print("=" * WIDTH)
 
 
 def ask(choices):
     """Show the choices and return the index the player picked."""
     for i, choice in enumerate(choices, start=1):
-        tag = {"track": "", "safe": "[SAFE] ", "bold": "[BOLD] "}[choice["kind"]]
-        print(f"  {i}) {tag}{choice['label']}")
+        tag = {"track": "", "safe": f"[{t('SAFE')}] ", "bold": f"[{t('BOLD')}] "}[choice["kind"]]
+        print(f"  {i}) {tag}{t(choice['label'])}")
     while True:
-        answer = input("> Your choice: ").strip()
+        answer = input("> " + t("Your choice:") + " ").strip()
         if answer.isdigit() and 1 <= int(answer) <= len(choices):
             return int(answer) - 1
-        print("  Please type a number from the list. Mayeul is sighing.")
+        print("  " + t("Please type a number from the list. Mayeul is sighing."))
 
 
 def play_once(name, trophies, endings_found):
     game = Game()
     game.player_name = name
-    print("\n" + "THE JOB INTERVIEW DISASTER".center(WIDTH) + "\n")
+    print("\n" + t("THE JOB INTERVIEW DISASTER").center(WIDTH) + "\n")
 
     while not game.is_over:
         scene = game.scene
@@ -70,10 +72,11 @@ def play_once(name, trophies, endings_found):
 
         hud(game)
         play_lines(game, scene["lines"])
-        print("\n" + game.fill(scene["question"]))
+        print("\n" + game.fill(t(scene["question"])))
         timed_out = False
         if scene.get("final"):
-            print(f"  (Quick! You have {TIMER_SECONDS} seconds, or Mayeul chooses for you.)")
+            print("  " + t("(Quick! You have {seconds} seconds, or Mayeul chooses for you.)")
+                  .format(seconds=TIMER_SECONDS))
         start = time.time()
         index = ask(scene["choices"])
         if scene.get("final") and time.time() - start > TIMER_SECONDS:
@@ -82,10 +85,9 @@ def play_once(name, trophies, endings_found):
         choice = game.choose(index, timed_out)
         reaction = list(choice["reaction"])
         if timed_out:
-            reaction.insert(0, ("mayeul", "Time's up, {name}. Too slow. I chose for you. "
-                                          "I always choose BOLD."))
+            reaction.insert(0, TIMEOUT_LINE)
         if choice.get("chaos"):
-            print("  >>> +1 CHAOS <<<")
+            print("  >>> " + t("+1 CHAOS!") + " <<<")
         play_lines(game, reaction)
         print()
 
@@ -95,14 +97,17 @@ def play_once(name, trophies, endings_found):
 
     # Mayeul's notebook
     notes, verdict = game.notebook()
-    print("\n" + "MAYEUL'S NOTEBOOK - OBSERVATIONS, VOLUME 7".center(WIDTH, "-"))
+    print("\n" + (" " + t("MAYEUL'S NOTEBOOK") + " ").center(WIDTH, "-"))
     for i, note in enumerate(notes, start=1):
         print(textwrap.fill(f" {i}. {note}", WIDTH, subsequent_indent="    "))
-    print(textwrap.fill(f" VERDICT: {verdict}  - M.", WIDTH, subsequent_indent="    "))
+    print(textwrap.fill(f" {t('VERDICT:')} {verdict}  - M.", WIDTH, subsequent_indent="    "))
     input("   ...")
     print("=" * WIDTH)
-    print(f" ENDING {game.ending_id}/9: {ending['title'].upper()}")
-    print(f" Type: {ending['type'].upper()}   Final Chaos: {game.chaos}/{MAX_CHAOS}")
+    print(" " + t("ENDING {number} OF 9").format(number=game.ending_id) + ": "
+          + t(ending["title"]).upper())
+    kind = {"calm": t("CALM"), "medium": t("MEDIUM"), "wild": t("WILD")}[ending["type"]]
+    print(" " + t("{kind} ENDING").format(kind=kind) + "   "
+          + t("CHAOS {chaos}/{max}").format(chaos=game.chaos, max=MAX_CHAOS))
     print("=" * WIDTH)
 
     # trophies
@@ -110,26 +115,35 @@ def play_once(name, trophies, endings_found):
     for trophy in ACHIEVEMENTS:
         if trophy in earned_achievements(game, endings_found) - trophies:
             trophies.add(trophy)
-            print(f" *** TROPHY UNLOCKED: {ACHIEVEMENTS[trophy][0]} - "
-                  f"{ACHIEVEMENTS[trophy][1]}")
-    print(f" Trophies: {len(trophies)}/{len(ACHIEVEMENTS)}")
+            title, description = ACHIEVEMENTS[trophy]
+            print(f" *** {t('TROPHY UNLOCKED')}: {t(title)} - {t(description)}")
+    print(" " + t("TROPHIES: {won} / {total}").format(won=len(trophies), total=len(ACHIEVEMENTS)))
+
+
+def choose_language():
+    codes = list(i18n.LANGUAGES)
+    for i, code in enumerate(codes, start=1):
+        print(f"  {i}) {i18n.LANGUAGES[code]}")
+    answer = input("> Language / Langue / Sprache / اللغة: ").strip()
+    if answer.isdigit() and 1 <= int(answer) <= len(codes):
+        i18n.set_language(codes[int(answer) - 1])
 
 
 def main():
     trophies, endings_found = set(), set()
     try:
-        name = " ".join(input("MAYEUL: Name? Your real one, please. ").split())[:16]
-        if not name:
-            name = DEFAULT_NAME
-            print(f"MAYEUL: No name? Fine. You are '{name}' now.")
+        choose_language()
+        name = " ".join(input(t("Name? Your real one, please. I'll know if you lie.")
+                              + " ").split())[:16]
+        name = name or DEFAULT_NAME
         while True:
             play_once(name, trophies, endings_found)
-            again = input("\nPlay again? (y/n) ").strip().lower()
-            if not again.startswith("y"):
+            again = input("\n" + t("Play again? (y/n)") + " ").strip().lower()
+            if not again[:1] in ("y", "o", "j", "ن"):      # yes / oui / ja / نعم
                 break
     except (KeyboardInterrupt, EOFError):   # Ctrl+C: quit without an error
         print()
-    print("Goodbye. Mayeul will remember this.")
+    print(t("Goodbye. Mayeul will remember this."))
 
 
 if __name__ == "__main__":

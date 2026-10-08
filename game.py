@@ -12,6 +12,7 @@ How the project is organised:
     engine.py    the rules (Chaos counter, ending rules)       = LOGIC
     game.py      this file: the window, HUD and drawings       = INTERFACE
     sounds.py    music and sound effects                       = AUDIO
+    i18n.py      translations (+ lang_fr.py, lang_de.py, lang_ar.py, arabic.py)
     terminal.py  the same game in the terminal                 = INTERFACE
 
 The graphics use tkinter, which comes with Python (nothing to install).
@@ -43,9 +44,13 @@ try:
 except ImportError:          # no graphics on this computer -> text version
     tk = None
 
+import arabic
+import i18n
 from engine import Game, MAX_CHAOS, TOTAL_CHOICES, TIMER_SECONDS, earned_achievements
+from i18n import t, vis, is_rtl
 from sounds import SoundPlayer
-from story import CHARACTERS, ENDINGS, TRACKS, MENU_QUOTES, ACHIEVEMENTS, DEFAULT_NAME
+from story import (CHARACTERS, ENDINGS, TRACKS, MENU_QUOTES, ACHIEVEMENTS, TIMEOUT_LINE,
+                   DEFAULT_NAME)
 
 
 # ===========================================================================
@@ -73,11 +78,11 @@ SHIRT_COLORS = {"white": "#f2f2ee", "orange": "#ff7a1a", "pink": "#ff8fc7"}
 # ===========================================================================
 # SMALL HELPERS
 # ===========================================================================
-def mix(color1, color2, t):
-    """Mix two '#rrggbb' colours. t=0 -> color1, t=1 -> color2."""
+def mix(color1, color2, amount):
+    """Mix two '#rrggbb' colours. amount=0 -> color1, amount=1 -> color2."""
     a = [int(color1[i:i + 2], 16) for i in (1, 3, 5)]
     b = [int(color2[i:i + 2], 16) for i in (1, 3, 5)]
-    return "#" + "".join(f"{round(x + (y - x) * t):02x}" for x, y in zip(a, b))
+    return "#" + "".join(f"{round(x + (y - x) * amount):02x}" for x, y in zip(a, b))
 
 
 def faded(color):
@@ -92,11 +97,13 @@ def load_save():
     try:
         data = json.loads(SAVE_FILE.read_text())
         return {"unlocked": {int(n) for n in data.get("unlocked", [])},
-                "trophies": {t for t in data.get("trophies", []) if t in ACHIEVEMENTS},
+                "trophies": {x for x in data.get("trophies", []) if x in ACHIEVEMENTS},
                 "sound": bool(data.get("sound", True)),
-                "name": str(data.get("name", ""))[:16]}
+                "name": str(data.get("name", ""))[:16],
+                "language": str(data.get("language", "en"))}
     except (OSError, ValueError, AttributeError, TypeError):
-        return {"unlocked": set(), "trophies": set(), "sound": True, "name": ""}
+        return {"unlocked": set(), "trophies": set(), "sound": True, "name": "",
+                "language": "en"}
 
 
 def write_save(data):
@@ -104,6 +111,11 @@ def write_save(data):
         SAVE_FILE.write_text(json.dumps(data))
     except OSError:
         pass  # not a problem: the game still works without saving
+
+
+def type_name(kind):
+    """'calm' -> 'CALM' (translated)."""
+    return {"calm": t("CALM"), "medium": t("MEDIUM"), "wild": t("WILD")}[kind]
 
 
 def draw_star(c, x, y, r, fill, tags=()):
@@ -178,7 +190,7 @@ def draw_person(c, cx, look, outfit, dim=False, lift=0, shirt=None):
         c.create_text(cx, top + 68, text="S", font=("Helvetica", 34, "bold"),
                       fill=col("#ff7a1a"), tags=tags)
     elif shirt == "pink":
-        c.create_text(cx, top + 62, text="WORLD'S\nBEST DAD", justify="center",
+        c.create_text(cx, top + 62, text=vis(t("WORLD'S\nBEST DAD")), justify="center",
                       font=("Helvetica", 13, "bold"), fill=col("#a3195b"), tags=tags)
 
     # --- head
@@ -296,29 +308,29 @@ def draw_person(c, cx, look, outfit, dim=False, lift=0, shirt=None):
 
 def draw_pigeon(c, x, y, s=1.0):
     """The pigeon from the train tracks. It follows you everywhere."""
-    t = ("stage",)
-    c.create_oval(x - 22 * s, y - 12 * s, x + 18 * s, y + 12 * s, fill="#8d93a3", outline="", tags=t)
-    c.create_oval(x + 8 * s, y - 24 * s, x + 26 * s, y - 6 * s, fill="#7a8194", outline="", tags=t)
+    tg = ("stage",)
+    c.create_oval(x - 22 * s, y - 12 * s, x + 18 * s, y + 12 * s, fill="#8d93a3", outline="", tags=tg)
+    c.create_oval(x + 8 * s, y - 24 * s, x + 26 * s, y - 6 * s, fill="#7a8194", outline="", tags=tg)
     c.create_polygon(x + 25 * s, y - 16 * s, x + 33 * s, y - 13 * s, x + 25 * s, y - 11 * s,
-                     fill="#e0a030", outline="", tags=t)
-    c.create_oval(x + 17 * s, y - 19 * s, x + 21 * s, y - 15 * s, fill="#ff7b2e", outline="", tags=t)
-    c.create_line(x - 4 * s, y + 12 * s, x - 6 * s, y + 20 * s, fill="#e0a030", width=2, tags=t)
-    c.create_line(x + 6 * s, y + 12 * s, x + 6 * s, y + 20 * s, fill="#e0a030", width=2, tags=t)
+                     fill="#e0a030", outline="", tags=tg)
+    c.create_oval(x + 17 * s, y - 19 * s, x + 21 * s, y - 15 * s, fill="#ff7b2e", outline="", tags=tg)
+    c.create_line(x - 4 * s, y + 12 * s, x - 6 * s, y + 20 * s, fill="#e0a030", width=2, tags=tg)
+    c.create_line(x + 6 * s, y + 12 * s, x + 6 * s, y + 20 * s, fill="#e0a030", width=2, tags=tg)
 
 
 def draw_clock(c, x, y, r, hhmm):
     """A wall clock showing the time of the scene (if it is a real time)."""
-    t = ("stage",)
-    c.create_oval(x - r, y - r, x + r, y + r, fill="#fdfdf8", outline="#333333", width=4, tags=t)
+    tg = ("stage",)
+    c.create_oval(x - r, y - r, x + r, y + r, fill="#fdfdf8", outline="#333333", width=4, tags=tg)
     for i in range(12):
         c.create_text(x + 0.78 * r * _sin(i * 30), y - 0.78 * r * _cos(i * 30), text="·",
-                      font=("Helvetica", 10, "bold"), fill="#333333", tags=t)
+                      font=("Helvetica", 10, "bold"), fill="#333333", tags=tg)
     if ":" not in hhmm:
         return
     h, m = (int(v) for v in hhmm.split(":"))
     for angle, length, width in ((((h % 12) + m / 60) * 30, 0.5, 4), (m * 6, 0.75, 3)):
         c.create_line(x, y, x + length * r * _sin(angle), y - length * r * _cos(angle),
-                      fill="#222222", width=width, capstyle="round", tags=t)
+                      fill="#222222", width=width, capstyle="round", tags=tg)
 
 
 def _sin(deg):
@@ -333,146 +345,146 @@ def _cos(deg):
 # DRAWING: BACKGROUNDS (one function per place)
 # ===========================================================================
 def bg_station(c, time):
-    t = ("stage",)
-    c.create_rectangle(-20, -20, W + 20, H + 20, fill="#8fa3b8", outline="", tags=t)
-    c.create_rectangle(-20, HUD_H, W + 20, HUD_H + 50, fill="#3b4250", outline="", tags=t)
+    tg = ("stage",)
+    c.create_rectangle(-20, -20, W + 20, H + 20, fill="#8fa3b8", outline="", tags=tg)
+    c.create_rectangle(-20, HUD_H, W + 20, HUD_H + 50, fill="#3b4250", outline="", tags=tg)
     for x in range(0, W, 120):
-        c.create_line(x, HUD_H + 50, x + 60, HUD_H + 10, fill="#2b313c", width=6, tags=t)
-    c.create_rectangle(-20, 420, W + 20, H + 20, fill="#7a7a7a", outline="", tags=t)
-    c.create_rectangle(-20, 420, W + 20, 432, fill="#f5c518", outline="", tags=t)
+        c.create_line(x, HUD_H + 50, x + 60, HUD_H + 10, fill="#2b313c", width=6, tags=tg)
+    c.create_rectangle(-20, 420, W + 20, H + 20, fill="#7a7a7a", outline="", tags=tg)
+    c.create_rectangle(-20, 420, W + 20, 432, fill="#f5c518", outline="", tags=tg)
     # departures board
-    c.create_rectangle(560, 140, 960, 300, fill="#1d1f24", outline="#444", width=4, tags=t)
-    c.create_text(760, 160, text="DEPARTURES", fill="#f5c518", font=("Courier", 16, "bold"), tags=t)
-    rows = [("08:47", "CITY CENTRE", "LATE"), ("09:02", "CITY CENTRE", "LATE"),
-            ("09:15", "CITY CENTRE", "CANCELLED"), ("09:31", "YOUR FUTURE", "ARRIVED?")]
+    c.create_rectangle(560, 140, 960, 300, fill="#1d1f24", outline="#444", width=4, tags=tg)
+    c.create_text(760, 160, text=vis(t("DEPARTURES")), fill="#f5c518", font=("Courier", 16, "bold"), tags=tg)
+    rows = [("08:47", t("CITY CENTRE"), t("LATE")), ("09:02", t("CITY CENTRE"), t("LATE")),
+            ("09:15", t("CITY CENTRE"), t("CANCELLED")), ("09:31", t("YOUR FUTURE"), t("ARRIVED?"))]
     for i, (hh, dest, status) in enumerate(rows):
         y = 194 + i * 26
-        c.create_text(580, y, anchor="w", text=f"{hh}  {dest}", fill="#ffb347",
-                      font=("Courier", 13, "bold"), tags=t)
-        c.create_text(940, y, anchor="e", text=status, fill="#ff5c5c",
-                      font=("Courier", 13, "bold"), tags=t)
+        c.create_text(580, y, anchor="w", text=vis(f"{hh}  {dest}"), fill="#ffb347",
+                      font=("Courier", 13, "bold"), tags=tg)
+        c.create_text(940, y, anchor="e", text=vis(status), fill="#ff5c5c",
+                      font=("Courier", 13, "bold"), tags=tg)
     draw_clock(c, 120, 170, 52, time)
     draw_pigeon(c, 930, 400, 1.2)
 
 
 def bg_reception(c, time):
-    t = ("stage",)
-    c.create_rectangle(-20, -20, W + 20, H + 20, fill="#c9bfa8", outline="", tags=t)
-    c.create_rectangle(-20, 360, W + 20, 372, fill="#a99d84", outline="", tags=t)
-    c.create_rectangle(-20, 470, W + 20, H + 20, fill="#6f6253", outline="", tags=t)
+    tg = ("stage",)
+    c.create_rectangle(-20, -20, W + 20, H + 20, fill="#c9bfa8", outline="", tags=tg)
+    c.create_rectangle(-20, 360, W + 20, 372, fill="#a99d84", outline="", tags=tg)
+    c.create_rectangle(-20, 470, W + 20, H + 20, fill="#6f6253", outline="", tags=tg)
     # the famous sign
-    c.create_rectangle(282, 92, 742, 150, fill="#2f3a56", outline="#1e2538", width=4, tags=t)
-    c.create_text(512, 121, text="WELCOME TO THE SYNERGIX FAMILY!", fill="#ffffff",
-                  font=("Helvetica", 17, "bold"), tags=t)
-    c.create_text(720, 166, text="help", fill="#6b6b6b", font=("Courier", 11, "italic"), tags=t)
+    c.create_rectangle(282, 92, 742, 150, fill="#2f3a56", outline="#1e2538", width=4, tags=tg)
+    c.create_text(512, 121, text=vis(t("WELCOME TO THE SYNERGIX FAMILY!")), fill="#ffffff",
+                  font=("Helvetica", 17, "bold"), tags=tg)
+    c.create_text(720, 166, text=vis(t("help")), fill="#6b6b6b", font=("Courier", 11, "italic"), tags=tg)
     # logo
-    c.create_oval(40, 92, 100, 152, fill="#ff7a1a", outline="", tags=t)
-    c.create_text(70, 122, text="S", fill="#ffffff", font=("Helvetica", 26, "bold"), tags=t)
+    c.create_oval(40, 92, 100, 152, fill="#ff7a1a", outline="", tags=tg)
+    c.create_text(70, 122, text="S", fill="#ffffff", font=("Helvetica", 26, "bold"), tags=tg)
     c.create_text(110, 112, anchor="w", text="SYNERGIX", fill="#2f3a56",
-                  font=("Helvetica", 14, "bold"), tags=t)
+                  font=("Helvetica", 14, "bold"), tags=tg)
     c.create_text(110, 132, anchor="w", text="SOLUTIONS", fill="#2f3a56",
-                  font=("Helvetica", 10), tags=t)
+                  font=("Helvetica", 10), tags=tg)
     draw_clock(c, 900, 140, 48, time)
     # a dead plant
-    c.create_polygon(890, 470, 960, 470, 950, 400, 900, 400, fill="#8a5a3c", outline="", tags=t)
+    c.create_polygon(890, 470, 960, 470, 950, 400, 900, 400, fill="#8a5a3c", outline="", tags=tg)
     for dx, dy in ((-30, 330), (-5, 310), (20, 335), (40, 360)):
-        c.create_line(925, 400, 925 + dx, dy, fill="#7a5a2a", width=3, smooth=True, tags=t)
-        c.create_oval(925 + dx - 8, dy - 4, 925 + dx + 8, dy + 6, fill="#9c7a3c", outline="", tags=t)
+        c.create_line(925, 400, 925 + dx, dy, fill="#7a5a2a", width=3, smooth=True, tags=tg)
+        c.create_oval(925 + dx - 8, dy - 4, 925 + dx + 8, dy + 6, fill="#9c7a3c", outline="", tags=tg)
 
 
 def bg_office(c, time, rival=False):
-    t = ("stage",)
+    tg = ("stage",)
     wall = "#c48b8b" if rival else "#9fb0c4"
-    c.create_rectangle(-20, -20, W + 20, H + 20, fill=wall, outline="", tags=t)
-    c.create_rectangle(-20, 470, W + 20, H + 20, fill="#4b5468" if not rival else "#5a3a3a", outline="", tags=t)
+    c.create_rectangle(-20, -20, W + 20, H + 20, fill=wall, outline="", tags=tg)
+    c.create_rectangle(-20, 470, W + 20, H + 20, fill="#4b5468" if not rival else "#5a3a3a", outline="", tags=tg)
     # window with rain
-    c.create_rectangle(640, 92, 940, 310, fill="#7d8a99", outline="#e8ecf2", width=8, tags=t)
-    c.create_line(790, 92, 790, 310, fill="#e8ecf2", width=6, tags=t)
+    c.create_rectangle(640, 92, 940, 310, fill="#7d8a99", outline="#e8ecf2", width=8, tags=tg)
+    c.create_line(790, 92, 790, 310, fill="#e8ecf2", width=6, tags=tg)
     for x in range(650, 940, 22):
         for y in (110, 170, 230, 280):
-            c.create_line(x, y, x - 6, y + 16, fill="#b8c4d2", width=2, tags=t)
+            c.create_line(x, y, x - 6, y + 16, fill="#b8c4d2", width=2, tags=tg)
     # poster
-    c.create_rectangle(80, 92, 330, 320, fill="#ffffff", outline="#2b2b2b", width=3, tags=t)
+    c.create_rectangle(80, 92, 330, 320, fill="#ffffff", outline="#2b2b2b", width=3, tags=tg)
     if rival:
-        c.create_text(205, 170, text="WE ARE NOT\nA FAMILY.", justify="center",
-                      font=("Helvetica", 22, "bold"), fill="#b71c1c", tags=t)
-        c.create_text(205, 250, text="WE ARE A TEAM.", font=("Helvetica", 15, "bold"),
-                      fill="#2b2b2b", tags=t)
-        c.create_text(280, 300, text="also help", font=("Courier", 10, "italic"),
-                      fill="#777777", tags=t)
+        c.create_text(205, 170, text=vis(t("WE ARE NOT\nA FAMILY.")), justify="center",
+                      font=("Helvetica", 22, "bold"), fill="#b71c1c", tags=tg)
+        c.create_text(205, 250, text=vis(t("WE ARE A TEAM.")), font=("Helvetica", 15, "bold"),
+                      fill="#2b2b2b", tags=tg)
+        c.create_text(280, 300, text=vis(t("also help")), font=("Courier", 10, "italic"),
+                      fill="#777777", tags=tg)
     else:
-        c.create_rectangle(92, 104, 318, 266, fill="#5d8cc6", outline="", tags=t)
-        c.create_polygon(110, 266, 205, 140, 300, 266, fill="#e8ecf2", outline="", tags=t)
-        c.create_polygon(110, 266, 205, 170, 300, 266, fill="#6a7b8c", outline="", tags=t)
-        c.create_text(205, 292, text="TEAMWORK", font=("Helvetica", 20, "bold"),
-                      fill="#2b2b2b", tags=t)
+        c.create_rectangle(92, 104, 318, 266, fill="#5d8cc6", outline="", tags=tg)
+        c.create_polygon(110, 266, 205, 140, 300, 266, fill="#e8ecf2", outline="", tags=tg)
+        c.create_polygon(110, 266, 205, 170, 300, 266, fill="#6a7b8c", outline="", tags=tg)
+        c.create_text(205, 292, text=vis(t("TEAMWORK")), font=("Helvetica", 20, "bold"),
+                      fill="#2b2b2b", tags=tg)
     # plastic plant
-    c.create_rectangle(470, 410, 520, 470, fill="#e0e0e0", outline="", tags=t)
+    c.create_rectangle(470, 410, 520, 470, fill="#e0e0e0", outline="", tags=tg)
     for dx in (-24, -10, 6, 22):
-        c.create_oval(495 + dx - 14, 360, 495 + dx + 14, 420, fill="#3fa34d", outline="", tags=t)
+        c.create_oval(495 + dx - 14, 360, 495 + dx + 14, 420, fill="#3fa34d", outline="", tags=tg)
 
 
 def bg_street(c, time, window_mayeul=False):
-    t = ("stage",)
-    c.create_rectangle(-20, -20, W + 20, H + 20, fill="#a7c0d6", outline="", tags=t)
+    tg = ("stage",)
+    c.create_rectangle(-20, -20, W + 20, H + 20, fill="#a7c0d6", outline="", tags=tg)
     buildings = [(0, 150, 180, "#8e9aaf"), (180, 210, 330, "#a3a9b8"), (330, 120, 520, "#7d8597"),
                  (520, 180, 640, "#99a0ae"), (640, 90, 900, "#5b6170"), (900, 200, 1024, "#8e9aaf")]
     for x0, y0, x1, color in buildings:
-        c.create_rectangle(x0, y0, x1, 470, fill=color, outline="", tags=t)
+        c.create_rectangle(x0, y0, x1, 470, fill=color, outline="", tags=tg)
         dark = color == "#5b6170"   # the mysterious grey building
         for wx in range(x0 + 16, x1 - 30, 46):
             for wy in range(y0 + 20, 440, 56):
                 c.create_rectangle(wx, wy, wx + 28, wy + 36,
-                                   fill="#2b2f3a" if dark else "#dfe8f2", outline="", tags=t)
+                                   fill="#2b2f3a" if dark else "#dfe8f2", outline="", tags=tg)
     if window_mayeul:
         # Mayeul waving from a window on the second floor
-        c.create_rectangle(708, 214, 790, 300, fill="#ffe8a3", outline="#2b2f3a", width=4, tags=t)
-        c.create_oval(734, 236, 764, 266, fill="#d9a27a", outline="", tags=t)
+        c.create_rectangle(708, 214, 790, 300, fill="#ffe8a3", outline="#2b2f3a", width=4, tags=tg)
+        c.create_oval(734, 236, 764, 266, fill="#d9a27a", outline="", tags=tg)
         c.create_arc(732, 232, 766, 254, start=0, extent=180, style="chord", fill="#1f1611",
-                     outline="", tags=t)
-        c.create_rectangle(728, 270, 770, 300, fill="#3a3f58", outline="", tags=t)
-        c.create_line(770, 280, 784, 236, fill="#d9a27a", width=6, capstyle="round", tags=t)
-    c.create_rectangle(-20, 470, W + 20, H + 20, fill="#4a4d55", outline="", tags=t)
-    c.create_rectangle(-20, 470, W + 20, 500, fill="#2e9e5b", outline="", tags=t)
+                     outline="", tags=tg)
+        c.create_rectangle(728, 270, 770, 300, fill="#3a3f58", outline="", tags=tg)
+        c.create_line(770, 280, 784, 236, fill="#d9a27a", width=6, capstyle="round", tags=tg)
+    c.create_rectangle(-20, 470, W + 20, H + 20, fill="#4a4d55", outline="", tags=tg)
+    c.create_rectangle(-20, 470, W + 20, 500, fill="#2e9e5b", outline="", tags=tg)
 
 
 def bg_park(c, time):
-    t = ("stage",)
-    c.create_rectangle(-20, -20, W + 20, H + 20, fill="#bfe3f5", outline="", tags=t)
-    c.create_oval(860, 90, 940, 170, fill="#ffe27a", outline="", tags=t)
-    c.create_rectangle(-20, 360, W + 20, H + 20, fill="#79b85a", outline="", tags=t)
+    tg = ("stage",)
+    c.create_rectangle(-20, -20, W + 20, H + 20, fill="#bfe3f5", outline="", tags=tg)
+    c.create_oval(860, 90, 940, 170, fill="#ffe27a", outline="", tags=tg)
+    c.create_rectangle(-20, 360, W + 20, H + 20, fill="#79b85a", outline="", tags=tg)
     for x, s in ((90, 1.0), (300, 0.8), (720, 0.9), (960, 1.1)):
-        c.create_rectangle(x - 12 * s, 260, x + 12 * s, 380, fill="#6b4a2e", outline="", tags=t)
+        c.create_rectangle(x - 12 * s, 260, x + 12 * s, 380, fill="#6b4a2e", outline="", tags=tg)
         for dx, dy in ((-40, 0), (40, 0), (0, -40), (0, 10)):
             c.create_oval(x + dx * s - 60 * s, 220 + dy * s - 60 * s, x + dx * s + 60 * s,
-                          220 + dy * s + 60 * s, fill="#4f9a3f", outline="", tags=t)
+                          220 + dy * s + 60 * s, fill="#4f9a3f", outline="", tags=tg)
     # bench
-    c.create_rectangle(140, 380, 880, 400, fill="#8a5a3c", outline="", tags=t)
-    c.create_rectangle(140, 410, 880, 428, fill="#8a5a3c", outline="", tags=t)
+    c.create_rectangle(140, 380, 880, 400, fill="#8a5a3c", outline="", tags=tg)
+    c.create_rectangle(140, 410, 880, 428, fill="#8a5a3c", outline="", tags=tg)
     draw_pigeon(c, 960, 440, 1.1)
 
 
 def bg_funeral(c, time):
-    t = ("stage",)
-    c.create_rectangle(-20, -20, W + 20, H + 20, fill="#4a4458", outline="", tags=t)
+    tg = ("stage",)
+    c.create_rectangle(-20, -20, W + 20, H + 20, fill="#4a4458", outline="", tags=tg)
     for x in (0, W - 120):
-        c.create_rectangle(x, HUD_H, x + 120, 470, fill="#5c2a4a", outline="", tags=t)
-    c.create_rectangle(-20, 470, W + 20, H + 20, fill="#2c2733", outline="", tags=t)
+        c.create_rectangle(x, HUD_H, x + 120, 470, fill="#5c2a4a", outline="", tags=tg)
+    c.create_rectangle(-20, 470, W + 20, H + 20, fill="#2c2733", outline="", tags=tg)
     # framed photo of a perfectly healthy grandma (giving a thumbs up)
-    c.create_rectangle(442, 90, 582, 240, fill="#d8c8a8", outline="#c9a54a", width=6, tags=t)
-    c.create_oval(484, 112, 540, 168, fill="#f1d3c0", outline="", tags=t)
+    c.create_rectangle(442, 90, 582, 240, fill="#d8c8a8", outline="#c9a54a", width=6, tags=tg)
+    c.create_oval(484, 112, 540, 168, fill="#f1d3c0", outline="", tags=tg)
     c.create_arc(480, 104, 544, 150, start=0, extent=180, style="chord", fill="#f2f2f2",
-                 outline="", tags=t)
-    c.create_rectangle(470, 172, 554, 240, fill="#1b1b1f", outline="", tags=t)
-    c.create_text(512, 258, text="R.I.P. (?)", fill="#e8e0f0", font=("Helvetica", 13, "bold"),
-                  tags=t)
-    c.create_line(442, 90, 472, 120, fill="#000000", width=10, tags=t)
+                 outline="", tags=tg)
+    c.create_rectangle(470, 172, 554, 240, fill="#1b1b1f", outline="", tags=tg)
+    c.create_text(512, 258, text=vis(t("R.I.P. (?)")), fill="#e8e0f0", font=("Helvetica", 13, "bold"),
+                  tags=tg)
+    c.create_line(442, 90, 472, 120, fill="#000000", width=10, tags=tg)
     # flowers
     for x in (180, 300, 724, 844):
         for i, color in enumerate(("#ff6b6b", "#ffd166", "#ffffff", "#c77dff", "#ff9ecd")):
             c.create_oval(x - 40 + i * 16, 330 - (i % 2) * 18, x - 14 + i * 16, 356 - (i % 2) * 18,
-                          fill=color, outline="", tags=t)
-        c.create_rectangle(x - 6, 350, x + 6, 470, fill="#3e7d3a", outline="", tags=t)
+                          fill=color, outline="", tags=tg)
+        c.create_rectangle(x - 6, 350, x + 6, 470, fill="#3e7d3a", outline="", tags=tg)
 
 
 BACKGROUNDS = {
@@ -493,33 +505,21 @@ BACKGROUNDS = {
 class GameApp:
     def __init__(self, root):
         self.root = root
-        root.title("The Job Interview Disaster")
+        root.title("The Job Interview Disaster")    # translated in set_language()
         root.resizable(False, False)
         root.configure(bg=COLORS["bg"])
 
         self.c = tk.Canvas(root, width=W, height=H, bg=COLORS["bg"], highlightthickness=0)
         self.c.pack()
 
-        # fonts: use nice fonts if the computer has them
-        families = set(tkfont.families())
-        ui = next((f for f in ("Segoe UI", "Helvetica Neue", "Inter", "Ubuntu",
-                               "DejaVu Sans", "Arial") if f in families), "Helvetica")
-        serif = next((f for f in ("Georgia", "DejaVu Serif", "Times New Roman")
-                      if f in families), "Times")
-        hand = next((f for f in ("Segoe Print", "Comic Sans MS", "Bradley Hand", "Noteworthy",
-                                 "Chalkboard SE", "Purisa", "Comic Neue") if f in families), None)
-        self.F = {
-            "title": (serif, 36, "bold"), "h1": (serif, 26, "bold"), "h2": (ui, 16, "bold"),
-            "text": (ui, 15), "italic": (ui, 15, "italic"), "small": (ui, 11),
-            "small_b": (ui, 11, "bold"), "btn": (ui, 14), "btn_b": (ui, 14, "bold"),
-            "tiny": (ui, 9, "bold"), "hud_big": (ui, 16, "bold"),
-            # "handwriting" for Mayeul's notebook
-            "hand": (hand, 14) if hand else (serif, 14, "italic"),
-            "hand_big": (hand, 24, "bold") if hand else (serif, 24, "bold", "italic"),
-        }
+        # Linux can't draw Arabic letters by itself: we do it (see arabic.py)
+        i18n.manual_arabic = root.tk.call("tk", "windowingsystem") == "x11"
+        self.measures = {}        # font -> function that measures a text in pixels
 
         self.game = Game()
         save = load_save()
+        i18n.set_language(save["language"])
+        self.make_fonts()
         self.unlocked = save["unlocked"]      # endings found (numbers 1 to 9)
         self.trophies = save["trophies"]      # trophies won (ids)
         self.last_name = save["name"]         # the name typed last time
@@ -547,6 +547,75 @@ class GameApp:
         self.sound_loop()
         self.show_menu()
 
+    def make_fonts(self):
+        """Choose nice fonts if the computer has them."""
+        families = set(tkfont.families())
+
+        def first(*names, default):
+            return next((f for f in names if f in families), default)
+
+        ui = first("Segoe UI", "Helvetica Neue", "Inter", "Ubuntu", "DejaVu Sans", "Arial",
+                   default="Helvetica")
+        serif = first("Georgia", "DejaVu Serif", "Times New Roman", default="Times")
+        hand = first("Segoe Print", "Comic Sans MS", "Bradley Hand", "Noteworthy",
+                     "Chalkboard SE", "Purisa", "Comic Neue", default=None)
+        if is_rtl():                   # Arabic: fonts that have Arabic letters
+            ui = first("Segoe UI", "Arial", "Geeza Pro", "DejaVu Sans", default=ui)
+            serif, hand = ui, None
+        self.F = {
+            "title": (serif, 36, "bold"), "h1": (serif, 26, "bold"), "h2": (ui, 16, "bold"),
+            "text": (ui, 15), "italic": (ui, 15, "italic"), "small": (ui, 11),
+            "small_b": (ui, 11, "bold"), "btn": (ui, 14), "btn_b": (ui, 14, "bold"),
+            "tiny": (ui, 9, "bold"), "hud_big": (ui, 16, "bold"),
+            # "handwriting" for Mayeul's notebook
+            "hand": (hand, 14) if hand else (serif, 14, "italic"),
+            "hand_big": (hand, 24, "bold") if hand else (serif, 24, "bold", "italic"),
+        }
+        if is_rtl():
+            self.F["italic"], self.F["hand"] = (ui, 15), (ui, 14)
+
+    # ------------------------------------------------------------------
+    # WRITING TEXT: every text goes through write(), so that Arabic is
+    # drawn from right to left (rtl_x = where the text starts in Arabic)
+    # ------------------------------------------------------------------
+    def write(self, x, y, text, font, fill=None, anchor="center", width=None,
+              justify="left", rtl_x=None, tags=()):
+        if is_rtl() and rtl_x is not None:
+            x = rtl_x
+            anchor = {"w": "e", "nw": "ne", "sw": "se",
+                      "e": "w", "ne": "nw", "se": "sw"}.get(anchor, anchor)
+            justify = "right"
+        shown, width = self.shaped(text, font, width)
+        return self.c.create_text(x, y, text=shown, font=font, fill=fill or COLORS["text"],
+                                  anchor=anchor, width=width, justify=justify, tags=tags)
+
+    def shaped(self, text, font, width):
+        """On Linux, we cut Arabic texts into lines and join the letters ourselves."""
+        if i18n.manual_arabic and arabic.has_arabic(text):
+            if font not in self.measures:
+                self.measures[font] = tkfont.Font(root=self.root, font=font).measure
+            return vis(text, self.measures[font], width), None
+        return text, width
+
+    def fit_font(self, text, font, max_width):
+        """Translations can be longer: make the font smaller until the text fits."""
+        family, size, *style = font
+        while size > 10:
+            candidate = (family, size, *style)
+            measure = tkfont.Font(root=self.root, font=candidate).measure
+            if max(measure(self.shaped(line, candidate, None)[0])
+                   for line in text.split("\n")) <= max_width:
+                return candidate
+            size -= 2
+        return (family, size, *style)
+
+    def set_language(self, code):
+        i18n.set_language(code)
+        self.make_fonts()
+        self.save_game()
+        self.root.title(t("The Job Interview Disaster"))
+        self.show_menu()
+
     def sound_loop(self):
         """Twice per second: let the sound system restart the music if it ended."""
         self.sound.update()
@@ -558,16 +627,18 @@ class GameApp:
 
     def save_game(self):
         write_save({"unlocked": sorted(self.unlocked), "trophies": sorted(self.trophies),
-                    "sound": self.sound.enabled, "name": self.last_name})
+                    "sound": self.sound.enabled, "name": self.last_name,
+                    "language": i18n.current})
 
     def toggle_sound(self):
         on = self.sound.toggle()
         self.save_game()
         for item in self.c.find_withtag("sound_label"):
-            self.c.itemconfig(item, text="SOUND ON" if on else "SOUND OFF")
+            self.c.itemconfig(item, text=vis(t("SOUND ON") if on else t("SOUND OFF")))
 
     def sound_button(self, x0, y0, x1, y1):
-        tag, _ = self.button(x0, y0, x1, y1, "SOUND ON" if self.sound.enabled else "SOUND OFF",
+        tag, _ = self.button(x0, y0, x1, y1,
+                             t("SOUND ON") if self.sound.enabled else t("SOUND OFF"),
                              self.toggle_sound, font=self.F["small_b"])
         self.c.addtag_withtag("sound_label", self.c.find_withtag(tag)[-1])
 
@@ -581,8 +652,8 @@ class GameApp:
         rect = self.c.create_rectangle(x0, y0, x1, y1, fill=fill,
                                        outline=color or COLORS["border"], width=2,
                                        tags=("btn", tag))
-        self.c.create_text((x0 + x1) / 2, (y0 + y1) / 2, text=text, fill=COLORS["text"],
-                           font=font or self.F["btn_b"], tags=("btn", tag))
+        self.write((x0 + x1) / 2, (y0 + y1) / 2, text, font or self.F["btn_b"],
+                   tags=("btn", tag))
         self._hover(tag, rect, fill, command, sound="click")
         return tag, rect
 
@@ -649,7 +720,7 @@ class GameApp:
     def check_trophies(self, popup=True):
         """Give the new trophies. Returns their titles."""
         new = earned_achievements(self.game, self.unlocked) - self.trophies
-        titles = [ACHIEVEMENTS[t][0] for t in ACHIEVEMENTS if t in new]   # story.py order
+        titles = [ACHIEVEMENTS[x][0] for x in ACHIEVEMENTS if x in new]   # story.py order
         self.trophies |= new
         if new:
             self.save_game()
@@ -662,17 +733,16 @@ class GameApp:
 
     def draw_toasts(self):
         self.c.delete("toast")
-        self.toasts = [t for t in self.toasts if t[1] > time.time()]
+        self.toasts = [x for x in self.toasts if x[1] > time.time()]
         for i, (title, _) in enumerate(self.toasts):
             x0, y0 = W - 380, HUD_H + 52 + i * 58
             tags = ("toast",)
             self.c.create_rectangle(x0, y0, W - 20, y0 + 48, fill=COLORS["panel"],
                                     outline=COLORS["accent"], width=2, tags=tags)
             draw_star(self.c, x0 + 28, y0 + 25, 16, COLORS["accent"], tags)
-            self.c.create_text(x0 + 54, y0 + 15, anchor="w", text="TROPHY UNLOCKED",
-                               font=self.F["tiny"], fill=COLORS["accent"], tags=tags)
-            self.c.create_text(x0 + 54, y0 + 33, anchor="w", text=title,
-                               font=self.F["small_b"], fill=COLORS["text"], tags=tags)
+            self.write(x0 + 54, y0 + 15, t("TROPHY UNLOCKED"), self.F["tiny"],
+                       COLORS["accent"], anchor="w", tags=tags)
+            self.write(x0 + 54, y0 + 33, t(title), self.F["small_b"], anchor="w", tags=tags)
         self.c.tag_raise("toast")
 
     # ------------------------------------------------------------------
@@ -692,26 +762,37 @@ class GameApp:
         # a coffee-cup ring stain on the menu (of course)
         self.c.create_oval(350, 92, 470, 212, outline="#6b4423", width=9)
         self.c.create_oval(366, 108, 454, 196, outline="#4a3018", width=2)
-        self.c.create_text(60, 96, anchor="nw", text="THE JOB\nINTERVIEW\nDISASTER",
-                           font=self.F["title"], fill=COLORS["text"])
-        self.c.create_text(62, 306, anchor="w", fill=COLORS["accent"], font=self.F["h2"],
-                           text="A dark comedy in five bad decisions")
+        title = t("THE JOB\nINTERVIEW\nDISASTER")
+        self.write(60, 96, title, self.fit_font(title, self.F["title"], 410), anchor="nw",
+                   rtl_x=470)
+        subtitle = t("A dark comedy in five bad decisions")
+        self.write(62, 306, subtitle, self.fit_font(subtitle, self.F["h2"], 410),
+                   COLORS["accent"], anchor="w", rtl_x=470)
+
+        # the language buttons (the current one has a yellow border)
+        for i, (code, name) in enumerate(i18n.LANGUAGES.items()):
+            x = 30 + i * 112
+            self.button(x, 16, x + 104, 50, name, lambda code=code: self.set_language(code),
+                        color=COLORS["accent"] if code == i18n.current else None,
+                        font=self.F["small_b"])
 
         found = len(self.unlocked)
-        items = [("NEW GAME", lambda: self.transition(self.show_name_screen), COLORS["accent"]),
-                 (f"ENDINGS  ({found}/9)", self.show_gallery, None),
-                 (f"TROPHIES  ({len(self.trophies)}/{len(ACHIEVEMENTS)})", self.show_trophies,
-                  None),
-                 ("HOW TO PLAY", self.show_help, None),
-                 ("QUIT", self.quit, None)]
+        items = [(t("NEW GAME"), lambda: self.transition(self.show_name_screen),
+                  COLORS["accent"]),
+                 (t("ENDINGS ({found}/9)").format(found=found), self.show_gallery, None),
+                 (t("TROPHIES ({won}/{total})").format(won=len(self.trophies),
+                                                      total=len(ACHIEVEMENTS)),
+                  self.show_trophies, None),
+                 (t("HOW TO PLAY"), self.show_help, None),
+                 (t("QUIT"), self.quit, None)]
         for i, (label, cmd, color) in enumerate(items):
             y = 340 + i * 50
             self.button(60, y, 470, y + 42, label, cmd, color=color)
 
         self.c.create_rectangle(520, 560, 1000, 616, fill=COLORS["panel"],
                                 outline=CHARACTERS["mayeul"]["color"], width=2)
-        self.c.create_text(760, 588, text=random.choice(MENU_QUOTES), width=450,
-                           font=self.F["small"], fill=COLORS["text"], justify="center")
+        self.write(760, 588, t(random.choice(MENU_QUOTES)), self.F["small"], width=450,
+                   justify="center")
         self.sound_button(890, 16, 1000, 50)
 
     def screen_panel(self, title):
@@ -719,42 +800,52 @@ class GameApp:
         self.clear()
         self.mode = "screen"
         self.c.create_rectangle(-20, -20, W + 20, H + 20, fill=COLORS["bg"], outline="")
-        self.c.create_text(W / 2, 50, text=title, font=self.F["h1"], fill=COLORS["accent"])
-        self.button(W / 2 - 120, 574, W / 2 + 120, 618, "BACK TO MENU", self.show_menu)
+        self.write(W / 2, 50, title, self.F["h1"], COLORS["accent"])
+        self.button(W / 2 - 130, 574, W / 2 + 130, 618, t("BACK TO MENU"), self.show_menu)
 
     def show_help(self):
-        self.screen_panel("HOW TO PLAY")
-        text = (
-            "You are a recent graduate with one clean shirt and a lot of anxiety. "
-            "You arrive at Synergix Solutions at 10:25... for a 10:00 interview.\n\n"
-            "CONTROLS\n"
-            "   Click, SPACE or ENTER  -  continue the dialogue\n"
-            "   Click a button or press 1 / 2 / 3  -  make a choice\n"
-            "   ESC  -  back to the main menu        S  -  sound on / off\n"
-            "   The FINAL decision has a timer: 10 seconds, or Mayeul chooses for you.\n\n"
-            "THE RULES\n"
-            "   Every story has exactly 5 choices.\n"
-            "   Choice 1 picks your track:  A) Lie   B) Tell the truth   C) Run away\n"
-            "   Choices 2, 3 and 4:  SAFE (no risk) or BOLD (+1 CHAOS)\n"
-            "   Choice 5 is the final decision:  SAFE or BOLD\n\n"
-            "THE ENDINGS\n"
-            "   Safe final choice                   ->  CALM ending\n"
-            "   Bold final choice + Chaos 0 or 1    ->  MEDIUM ending\n"
-            "   Bold final choice + Chaos 2 or 3    ->  WILD ending\n\n"
-            "Mayeul writes down everything you do. At the end, you can read his notebook.\n"
-            "There are 9 endings and 12 trophies. One ending is a secret. Mayeul knows which one."
-        )
+        self.screen_panel(t("HOW TO PLAY"))
+        lines = [
+            t("You are a recent graduate with one clean shirt and a lot of anxiety. "
+              "You arrive at Synergix Solutions at 10:25... for a 10:00 interview."),
+            "",
+            t("CONTROLS"),
+            "-  " + t("Click, SPACE or ENTER: continue the dialogue."),
+            "-  " + t("Click a button or press 1, 2 or 3: make a choice."),
+            "-  " + t("ESC: back to the main menu.   S: sound on / off."),
+            "-  " + t("The FINAL decision has a timer: 10 seconds, or Mayeul chooses for you."),
+            "",
+            t("THE RULES"),
+            "-  " + t("Every story has exactly 5 choices."),
+            "-  " + t("Choice 1 picks your track: A) Lie, B) Tell the truth, C) Run away."),
+            "-  " + t("Choices 2, 3 and 4: SAFE (no risk) or BOLD (+1 CHAOS)."),
+            "-  " + t("Choice 5 is the final decision: SAFE or BOLD."),
+            "",
+            t("THE ENDINGS"),
+            "-  " + t("Safe final choice: CALM ending."),
+            "-  " + t("Bold final choice + Chaos 0 or 1: MEDIUM ending."),
+            "-  " + t("Bold final choice + Chaos 2 or 3: WILD ending."),
+            "",
+            t("Mayeul writes down everything you do. At the end, you can read his notebook."),
+            t("There are 9 endings and 12 trophies. One ending is a secret. "
+              "Mayeul knows which one."),
+        ]
         self.c.create_rectangle(90, 86, 934, 560, fill=COLORS["panel"],
                                 outline=COLORS["border"], width=2)
-        self.c.create_text(118, 104, anchor="nw", text=text, width=790,
-                           font=(self.F["text"][0], 13), fill=COLORS["text"])
+        for size in (12, 11, 10):              # smaller if the translation is long
+            item = self.write(118, 104, "\n".join(lines), (self.F["text"][0], size),
+                              anchor="nw", width=790, rtl_x=906)
+            if self.c.bbox(item)[3] <= 550:
+                break
+            self.c.delete(item)
 
     def show_gallery(self):
-        self.screen_panel(f"ENDINGS FOUND: {len(self.unlocked)} / 9")
+        self.screen_panel(t("ENDINGS FOUND: {found} / 9").format(found=len(self.unlocked)))
         for col, letter in enumerate("ABC"):
             x0 = 40 + col * 322
-            self.c.create_text(x0 + 146, 104, text=f"TRACK {letter} - {TRACKS[letter]['name'].upper()}",
-                               font=self.F["h2"], fill=COLORS["track"])
+            track = t("TRACK {letter} - {name}").format(letter=letter,
+                                                          name=t(TRACKS[letter]["name"]).upper())
+            self.write(x0 + 146, 104, track, self.F["h2"], COLORS["track"])
             for row, kind in enumerate(("calm", "medium", "wild")):
                 number = TRACKS[letter]["endings"][kind]
                 ending = ENDINGS[number]
@@ -763,21 +854,22 @@ class GameApp:
                 color = TYPE_COLORS[kind] if found else COLORS["border"]
                 self.c.create_rectangle(x0, y0, x0 + 292, y0 + 130, fill=COLORS["panel"],
                                         outline=color, width=2)
-                self.c.create_text(x0 + 14, y0 + 16, anchor="w", text=f"#{number}",
-                                   font=self.F["small_b"], fill=COLORS["muted"])
-                self.c.create_text(x0 + 278, y0 + 16, anchor="e", text=kind.upper(),
-                                   font=self.F["small_b"], fill=color)
+                self.write(x0 + 14, y0 + 16, f"#{number}", self.F["small_b"], COLORS["muted"],
+                           anchor="w")
+                self.write(x0 + 278, y0 + 16, type_name(kind), self.F["small_b"], color,
+                           anchor="e")
                 if found:
-                    title, fill = ending["title"], COLORS["text"]
+                    title, fill = t(ending["title"]), COLORS["text"]
                 elif ending.get("secret"):
-                    title, fill = "??? (secret ending)", COLORS["muted"]
+                    title, fill = t("??? (secret ending)"), COLORS["muted"]
                 else:
                     title, fill = "???", COLORS["muted"]
-                self.c.create_text(x0 + 146, y0 + 72, text=title, width=260, justify="center",
-                                   font=self.F["h2"], fill=fill)
+                self.write(x0 + 146, y0 + 72, title, self.F["h2"], fill, width=260,
+                           justify="center")
 
     def show_trophies(self):
-        self.screen_panel(f"TROPHIES: {len(self.trophies)} / {len(ACHIEVEMENTS)}")
+        self.screen_panel(t("TROPHIES: {won} / {total}").format(won=len(self.trophies),
+                                                               total=len(ACHIEVEMENTS)))
         for i, (trophy, (title, description)) in enumerate(ACHIEVEMENTS.items()):
             x0 = 52 + (i % 2) * 468
             y0 = 88 + (i // 2) * 79
@@ -785,10 +877,10 @@ class GameApp:
             self.c.create_rectangle(x0, y0, x0 + 452, y0 + 68, fill=COLORS["panel"],
                                     outline=COLORS["accent"] if won else COLORS["border"], width=2)
             draw_star(self.c, x0 + 36, y0 + 34, 22, COLORS["accent"] if won else COLORS["border"])
-            self.c.create_text(x0 + 70, y0 + 22, anchor="w", text=title if won else "???",
-                               font=self.F["h2"], fill=COLORS["text"] if won else COLORS["muted"])
-            self.c.create_text(x0 + 70, y0 + 48, anchor="w", text=description,
-                               font=self.F["small"], fill=COLORS["muted"])
+            self.write(x0 + 70, y0 + 22, t(title) if won else "???", self.F["h2"],
+                       COLORS["text"] if won else COLORS["muted"], anchor="w", rtl_x=x0 + 440)
+            self.write(x0 + 70, y0 + 48, t(description), self.F["small"], COLORS["muted"],
+                       anchor="w", rtl_x=x0 + 440)
 
     # ------------------------------------------------------------------
     # YOUR NAME: Mayeul asks for it before the story starts
@@ -803,12 +895,12 @@ class GameApp:
         c = self.c
         c.create_rectangle(60, 110, 620, 520, fill=COLORS["panel"], outline=COLORS["border"],
                            width=2)
-        c.create_text(90, 150, anchor="w", text="SIGN IN, PLEASE", font=self.F["h1"],
-                      fill=COLORS["accent"])
+        self.write(90, 150, t("SIGN IN, PLEASE"), self.F["h1"], COLORS["accent"], anchor="w",
+                   rtl_x=590)
         c.create_rectangle(90, 186, 200, 214, fill=CHARACTERS["mayeul"]["color"], outline="")
-        c.create_text(145, 200, text="MAYEUL", font=self.F["small_b"], fill="#111111")
-        c.create_text(90, 230, anchor="nw", width=500, font=self.F["text"], fill=COLORS["text"],
-                      text="Name? Your real one, please. I'll know if you lie.")
+        self.write(145, 200, t("Mayeul").upper(), self.F["small_b"], "#111111")
+        self.write(90, 230, t("Name? Your real one, please. I'll know if you lie."),
+                   self.F["text"], anchor="nw", width=500, rtl_x=590)
 
         # a real text box (tkinter Entry) placed on the canvas
         self.name_var = tk.StringVar(value=self.last_name)
@@ -822,10 +914,10 @@ class GameApp:
         c.create_window(340, 310, window=self.name_entry, width=460, height=48)
         self.name_entry.focus_set()
         self.name_entry.select_range(0, "end")
-        c.create_text(340, 356, text="Leave it empty and Mayeul will choose a name for you.",
-                      font=self.F["small"], fill=COLORS["muted"])
-        self.button(110, 400, 330, 450, "BACK", self.show_menu)
-        self.button(350, 400, 570, 450, "START  (ENTER)", self.submit_name,
+        self.write(340, 356, t("Leave it empty and Mayeul will choose a name for you."),
+                   self.F["small"], COLORS["muted"])
+        self.button(110, 400, 330, 450, t("BACK"), self.show_menu)
+        self.button(350, 400, 570, 450, t("START (ENTER)"), self.submit_name,
                     color=COLORS["accent"])
 
     def submit_name(self):
@@ -873,7 +965,7 @@ class GameApp:
             speaker, text = self.queue.pop(0)
             self.sound.effect("blip")
             self.draw_frame(speaker)
-            self.type_text(self.game.fill(text))         # {name} -> the player's name
+            self.type_text(self.game.fill(t(text)))      # translate, then put the name in
         else:
             callback, self.when_done = self.when_done, None
             callback()
@@ -888,7 +980,7 @@ class GameApp:
     def show_choices(self):
         scene = self.game.scene
         self.mode = "choice"
-        self.draw_frame(None, question=self.game.fill(scene["question"]))
+        self.draw_frame(None, question=self.game.fill(t(scene["question"])))
 
         choices = scene["choices"]
         bw, bh, gap = 760, 58, 14
@@ -912,7 +1004,7 @@ class GameApp:
                            outline=COLORS["border"], width=2)
         self.timer_box = (x0 + 3, y0 + 21, x1 - 3, y0 + 33)
         self.timer_bar = c.create_rectangle(*self.timer_box, fill=COLORS["accent"], outline="")
-        c.create_rectangle(x0, y0 - 12, x0 + 330, y0 + 12, fill=COLORS["panel"], outline="")
+        c.create_rectangle(x0, y0 - 12, x0 + 380, y0 + 12, fill=COLORS["panel"], outline="")
         self.timer_text = c.create_text(x0 + 10, y0, anchor="w", font=self.F["small_b"],
                                         fill=COLORS["accent"])
         self.timer_step()
@@ -930,8 +1022,8 @@ class GameApp:
         self.c.coords(self.timer_bar, x0, y0,
                       x0 + (x1 - x0) * self.timer_left / (TIMER_SECONDS * 10), y1)
         self.c.itemconfig(self.timer_bar, fill=color)
-        self.c.itemconfig(self.timer_text, fill=color,
-                          text=f"MAYEUL IS GETTING IMPATIENT...  {seconds}")
+        text = t("MAYEUL IS GETTING IMPATIENT... {seconds}").format(seconds=seconds)
+        self.c.itemconfig(self.timer_text, fill=color, text=vis(text))
         if self.timer_left <= 0:                 # too late: Mayeul picks BOLD
             choices = self.game.scene["choices"]
             bold = next(i for i, ch in enumerate(choices) if ch["kind"] == "bold")
@@ -942,14 +1034,14 @@ class GameApp:
     def choice_button(self, x0, y0, x1, y1, index, choice, scene):
         kind = choice["kind"]
         if kind == "track":
-            label = f"TRACK {choice['track']}"
+            label = t("TRACK {letter}").format(letter=choice["track"])
             color = COLORS["track"]
         elif kind == "safe":
-            label, color = "SAFE", COLORS["safe"]
+            label, color = t("SAFE"), COLORS["safe"]
         elif scene.get("final"):
-            label, color = "BOLD", COLORS["final"]
+            label, color = t("BOLD"), COLORS["final"]
         else:
-            label, color = "BOLD  +1", COLORS["bold"]
+            label, color = t("BOLD") + "  +1", COLORS["bold"]
 
         tag = f"choice{index}"
         fill = COLORS["panel2"]
@@ -957,10 +1049,10 @@ class GameApp:
                                        tags=("btn", tag))
         self.c.create_rectangle(x0, y0, x0 + 112, y1, fill=color, outline=color,
                                 tags=("btn", tag))
-        self.c.create_text(x0 + 56, (y0 + y1) / 2, text=label, font=self.F["small_b"],
-                           fill="#111111", tags=("btn", tag))
-        self.c.create_text(x0 + 128, (y0 + y1) / 2, anchor="w", text=choice["label"], width=570,
-                           font=self.F["btn"], fill=COLORS["text"], tags=("btn", tag))
+        self.write(x0 + 56, (y0 + y1) / 2, label, self.F["small_b"], "#111111",
+                   tags=("btn", tag))
+        self.write(x0 + 128, (y0 + y1) / 2, t(choice["label"]), self.F["btn"], anchor="w",
+                   width=570, rtl_x=x1 - 44, tags=("btn", tag))
         self.c.create_text(x1 - 18, (y0 + y1) / 2, text=str(index + 1), font=self.F["h2"],
                            fill=COLORS["muted"], tags=("btn", tag))
         self._hover(tag, rect, fill, lambda: self.pick(index), sound=None)
@@ -972,8 +1064,7 @@ class GameApp:
         choice = self.game.choose(index, timed_out)   # the ENGINE applies the rules
         lines = list(choice["reaction"])
         if timed_out:
-            lines.insert(0, ("mayeul", "Time's up, {name}. Too slow. I'll choose for you. "
-                                       "I always choose BOLD."))
+            lines.insert(0, TIMEOUT_LINE)       # "Time's up... I always choose BOLD."
         self.play_lines(lines, self.after_choice)
         if choice.get("chaos"):
             self.sound.effect("chaos")
@@ -990,9 +1081,9 @@ class GameApp:
         x, y = 20, HUD_H + 14
         box = self.c.create_rectangle(x, y, x + 330, y + 34, fill=COLORS["panel"],
                                       outline=CHARACTERS["mayeul"]["color"], width=2)
-        text = self.c.create_text(x + 14, y + 17, anchor="w", font=self.F["small_b"],
-                                  fill=CHARACTERS["mayeul"]["color"],
-                                  text="Mayeul writes something in his notebook...")
+        text = self.write(x + 14, y + 17, t("Mayeul writes something in his notebook..."),
+                          self.F["small_b"], CHARACTERS["mayeul"]["color"], anchor="w",
+                          rtl_x=x + 316)
         self.root.after(500, lambda: frame == self.frame and self.sound.effect("scribble"))
         self.root.after(2500, lambda: self.c.delete(box, text))
 
@@ -1038,23 +1129,40 @@ class GameApp:
         for x in range(214, 812, 46):
             c.create_oval(x, 14, x + 16, 38, fill="#b4b9c2", outline="#6b707a", width=2)
         c.create_oval(276, 512, 380, 616, outline="#c8a27a", width=6)     # coffee ring
-        c.create_text(270, 74, anchor="w", text="MAYEUL'S NOTEBOOK", font=self.F["hand_big"],
-                      fill=ink)
-        c.create_text(272, 112, anchor="w", font=self.F["small"], fill="#6b6b6b",
-                      text=f"Observations, volume 7. Subject: {self.game.player_name}, "
-                           "the 10 o'clock interview.")
+        self.write(270, 74, t("MAYEUL'S NOTEBOOK"), self.F["hand_big"], ink, anchor="w",
+                   rtl_x=800)
+        subtitle = t("Observations, volume 7. Subject: {name}, the 10 o'clock interview.")
+        self.write(272, 112, subtitle.format(name=self.game.display_name), self.F["small"],
+                   "#6b6b6b", anchor="w", rtl_x=800)
 
-        notes, verdict = self.game.notebook()
+        notes, verdict = self.game.notebook()          # already translated
         self.nb_lines = [(f"{i}. {note}", ink) for i, note in enumerate(notes, start=1)]
-        self.nb_lines.append((f"VERDICT: {verdict}", "#c0392b"))
+        self.nb_lines.append((t("VERDICT:") + " " + verdict, "#c0392b"))
+        self.nb_font = self.notebook_font()
         self.nb_y = 150
         self.nb_job = self.root.after(400, self.write_next_note)
+
+    def notebook_font(self):
+        """The biggest handwriting where all the notes fit on the page."""
+        family, size, *style = self.F["hand"]
+        while size > 10:
+            font = (family, size, *style)
+            height = 12                                  # the verdict's lines
+            for text, _ in self.nb_lines:
+                item = self.write(270, 0, text, font, anchor="nw", width=530, rtl_x=800)
+                bbox = self.c.bbox(item)
+                height += bbox[3] - bbox[1] + 14
+                self.c.delete(item)
+            if height <= 360:
+                return font
+            size -= 1
+        return (family, size, *style)
 
     def write_note(self):
         """Write ONE line in the notebook (the last line is the verdict)."""
         text, color = self.nb_lines.pop(0)
-        item = self.c.create_text(270, self.nb_y, anchor="nw", text=text, width=530,
-                                  font=self.F["hand"], fill=color)
+        item = self.write(270, self.nb_y, text, self.nb_font, color, anchor="nw", width=530,
+                          rtl_x=800)
         bottom = self.c.bbox(item)[3]
         if not self.nb_lines:                          # the verdict: underlined twice
             for dy in (4, 9):
@@ -1080,10 +1188,9 @@ class GameApp:
 
     def notebook_done(self):
         self.mode = "notebook_done"
-        self.c.create_text(780, self.nb_y + 6, anchor="e", text="- M.",
-                           font=self.F["hand_big"], fill="#2b3a67")
-        self.button(560, 556, 800, 596, "CONTINUE", lambda: self.transition(self.notebook_then),
-                    color=COLORS["accent"])
+        self.write(780, self.nb_y + 6, "- M.", self.F["hand_big"], "#2b3a67", anchor="e")
+        self.button(560, 556, 800, 596, t("CONTINUE"),
+                    lambda: self.transition(self.notebook_then), color=COLORS["accent"])
 
     def show_ending_card(self, jingle=True):
         game, ending = self.game, self.game.ending
@@ -1103,52 +1210,54 @@ class GameApp:
         self.c.create_rectangle(60, 40, W - 60, H - 40, fill=COLORS["panel"], outline=color,
                                 width=3)
 
-        label = f"ENDING {game.ending_id} OF 9"
+        label = t("ENDING {number} OF 9").format(number=game.ending_id)
         if ending.get("secret"):
-            label += "  -  SECRET ENDING!"
-        self.c.create_text(W / 2, 80, text=label, font=self.F["h2"], fill=COLORS["muted"])
-        self.c.create_text(W / 2, 135, text=ending["title"], font=self.F["h1"],
-                           fill=COLORS["text"], width=820, justify="center")
-        self.c.create_rectangle(W / 2 - 110, 180, W / 2 + 110, 216, fill=color, outline="")
-        self.c.create_text(W / 2, 198, text=f"{ending['type'].upper()} ENDING",
-                           font=self.F["h2"], fill="#111111")
-        news = ["NEW ENDING UNLOCKED!"] if is_new else []
+            label += "  -  " + t("SECRET ENDING!")
+        self.write(W / 2, 80, label, self.F["h2"], COLORS["muted"])
+        self.write(W / 2, 135, t(ending["title"]), self.F["h1"], width=820, justify="center")
+        self.c.create_rectangle(W / 2 - 130, 180, W / 2 + 130, 216, fill=color, outline="")
+        self.write(W / 2, 198, t("{kind} ENDING").format(kind=type_name(ending["type"])),
+                   self.F["h2"], "#111111")
+        news = [t("NEW ENDING UNLOCKED!")] if is_new else []
         if self.new_trophies:
-            news.append("NEW TROPHIES: " + ", ".join(self.new_trophies))
+            comma = "، " if is_rtl() else ", "         # Arabic has its own comma
+            news.append(t("NEW TROPHIES:") + " " + comma.join(t(x) for x in self.new_trophies))
         if news:
-            self.c.create_text(W / 2, 236, text="     *     ".join(news), width=820,
-                               font=self.F["small_b"], fill=COLORS["accent"], justify="center")
+            self.write(W / 2, 236, "     *     ".join(news), self.F["small_b"], COLORS["accent"],
+                       width=820, justify="center")
 
         # explain WHY the player got this ending (useful in class!)
-        final_kind = game.history[-1]["kind"].upper()
-        why = (f"Final choice: {final_kind}    |    Chaos: {game.chaos}/{MAX_CHAOS}"
-               f"    |    Track {game.track}: {TRACKS[game.track]['name']}")
-        self.c.create_text(W / 2, 262, text=why, font=self.F["small"], fill=COLORS["text"])
+        kinds = {"track": t("TRACK"), "safe": t("SAFE"), "bold": t("BOLD")}
+        why = t("Final choice: {kind}   |   Chaos: {chaos}/{max}   |   Track {letter}: {name}")
+        why = why.format(kind=kinds[game.history[-1]["kind"]], chaos=game.chaos, max=MAX_CHAOS,
+                         letter=game.track, name=t(TRACKS[game.track]["name"]))
+        self.write(W / 2, 262, why, self.F["small"])
 
         # the 5 choices of this playthrough
-        self.c.create_text(120, 296, anchor="w", font=self.F["small_b"], fill=COLORS["accent"],
-                           text=f"THE PATH OF {game.player_name.upper()}")
+        self.write(120, 296, t("THE PATH OF {name}").format(name=game.display_name.upper()),
+                   self.F["small_b"], COLORS["accent"], anchor="w")
         for i, step in enumerate(game.history):
             y = 324 + i * 32
             kind = step["kind"]
-            tag = {"track": "TRACK", "safe": "SAFE", "bold": "BOLD"}[kind]
             tcolor = {"track": COLORS["track"], "safe": COLORS["safe"],
                       "bold": COLORS["bold"]}[kind]
-            self.c.create_text(120, y, anchor="w", text=f"{step['number']}.",
-                               font=self.F["small_b"], fill=COLORS["muted"])
-            self.c.create_rectangle(146, y - 11, 210, y + 11, fill=tcolor, outline="")
-            self.c.create_text(178, y, text=tag, font=self.F["tiny"], fill="#111111")
-            label = step["label"] + ("   (too slow: Mayeul chose)" if step["timed_out"] else "")
-            self.c.create_text(224, y, anchor="w", text=label, font=self.F["small"],
-                               fill=COLORS["text"])
+            self.write(120, y, f"{step['number']}.", self.F["small_b"], COLORS["muted"],
+                       anchor="w")
+            self.c.create_rectangle(146, y - 11, 246, y + 11, fill=tcolor, outline="")
+            self.write(196, y, kinds[kind], self.F["tiny"], "#111111")
+            label = t(step["label"])
+            if step["timed_out"]:
+                label += "   " + t("(too slow: Mayeul chose)")
+            self.write(260, y, label, self.F["small"], anchor="w")
 
-        self.c.create_text(W / 2, 498, text=f"Endings found: {len(self.unlocked)} / 9     |     "
-                           f"Trophies: {len(self.trophies)} / {len(ACHIEVEMENTS)}",
-                           font=self.F["small_b"], fill=COLORS["muted"])
-        buttons = [("PLAY AGAIN (R)", self.new_game, COLORS["accent"]),
-                   ("NOTEBOOK (N)", self.reopen_notebook, CHARACTERS["mayeul"]["color"]),
-                   ("ENDINGS", self.show_gallery, None),
-                   ("MAIN MENU (M)", self.show_menu, None)]
+        found = t("Endings found: {found} / 9   |   Trophies: {won} / {total}")
+        self.write(W / 2, 498, found.format(found=len(self.unlocked), won=len(self.trophies),
+                                            total=len(ACHIEVEMENTS)),
+                   self.F["small_b"], COLORS["muted"])
+        buttons = [(t("PLAY AGAIN (R)"), self.new_game, COLORS["accent"]),
+                   (t("NOTEBOOK (N)"), self.reopen_notebook, CHARACTERS["mayeul"]["color"]),
+                   (t("ENDINGS"), self.show_gallery, None),
+                   (t("MAIN MENU (M)"), self.show_menu, None)]
         for i, (label, command, color) in enumerate(buttons):
             x = 112 + i * 205
             self.button(x, 520, x + 185, 570, label, command, color=color)
@@ -1189,29 +1298,31 @@ class GameApp:
         c.create_line(0, HUD_H, W, HUD_H, fill=COLORS["border"], width=2)
 
         # left: title + track
-        c.create_text(20, 20, anchor="w", text="THE JOB INTERVIEW DISASTER",
-                      font=self.F["small_b"], fill=COLORS["accent"])
+        self.write(20, 20, t("THE JOB INTERVIEW DISASTER"), self.F["small_b"],
+                   COLORS["accent"], anchor="w")
         if in_ending:
-            track_text = "THE END"
+            track_text = t("THE END")
         elif game.track:
-            track_text = f"TRACK {game.track}  -  {TRACKS[game.track]['name'].upper()}"
+            track_text = t("TRACK {letter} - {name}").format(
+                letter=game.track, name=t(TRACKS[game.track]["name"]).upper())
         else:
-            track_text = "PROLOGUE" if stage.get("number") == 0 else "THE BEGINNING"
-        c.create_text(20, 42, anchor="w", text=track_text, font=self.F["small_b"],
-                      fill=COLORS["track"])
+            track_text = t("PROLOGUE") if stage.get("number") == 0 else t("THE BEGINNING")
+        self.write(20, 42, track_text, self.F["small_b"], COLORS["track"], anchor="w")
 
         # centre: time + place
-        c.create_text(450, 20, text=stage["time"], font=self.F["hud_big"], fill=COLORS["text"])
-        c.create_text(450, 43, text=stage["location"], font=self.F["small"],
-                      fill=COLORS["muted"])
+        self.write(450, 20, t(stage["time"]), self.F["hud_big"])
+        self.write(450, 43, t(stage["location"]), self.F["small"], COLORS["muted"])
 
         # right: choice progress (5 dots)
         number = stage.get("number", TOTAL_CHOICES + 1)
         done = len(game.history)
-        label = "ENDING" if in_ending else (
-            "PROLOGUE" if number == 0 else f"CHOICE {number}/{TOTAL_CHOICES}")
-        c.create_text(612, 20, anchor="w", text=label, font=self.F["small_b"],
-                      fill=COLORS["text"])
+        if in_ending:
+            label = t("ENDING")
+        elif number == 0:
+            label = t("PROLOGUE")
+        else:
+            label = t("CHOICE {number}/{total}").format(number=number, total=TOTAL_CHOICES)
+        self.write(612, 20, label, self.F["small_b"], anchor="w")
         for i in range(TOTAL_CHOICES):
             x = 618 + i * 18
             if i < done:
@@ -1222,8 +1333,9 @@ class GameApp:
                 c.create_oval(x - 6, 36, x + 6, 48, fill=COLORS["border"], outline="")
 
         # right: CHAOS meter (3 pips)
-        c.create_text(722, 20, anchor="w", text=f"CHAOS {game.chaos}/{MAX_CHAOS}",
-                      font=self.F["small_b"], fill=COLORS["bold"] if game.chaos else COLORS["text"])
+        self.write(722, 20, t("CHAOS {chaos}/{max}").format(chaos=game.chaos, max=MAX_CHAOS),
+                   self.F["small_b"], COLORS["bold"] if game.chaos else COLORS["text"],
+                   anchor="w")
         for i in range(MAX_CHAOS):
             x = 722 + i * 30
             on = i < game.chaos
@@ -1231,8 +1343,8 @@ class GameApp:
                                fill=COLORS["bold"] if on else COLORS["border"])
 
         # sound + menu buttons
-        self.sound_button(830, 14, 916, 46)
-        self.button(926, 14, 1006, 46, "MENU", self.ask_menu, font=self.F["small_b"])
+        self.sound_button(816, 14, 916, 46)
+        self.button(926, 14, 1006, 46, t("MENU"), self.ask_menu, font=self.F["small_b"])
 
     def draw_box(self, speaker, question):
         c = self.c
@@ -1241,23 +1353,21 @@ class GameApp:
         c.create_rectangle(x0, y0, x1, y1, fill=COLORS["panel"], outline=COLORS["border"], width=2)
 
         if question is not None:
-            name, role, color = "YOUR CHOICE", "Choose wisely. Or don't.", COLORS["accent"]
+            name, role, color = t("YOUR CHOICE"), t("Choose wisely. Or don't."), COLORS["accent"]
         elif speaker is None:
             name = None
         else:
             ch = CHARACTERS[speaker]
-            name, role, color = ch["name"].upper(), ch["role"], ch["color"]
+            name, role, color = t(ch["name"]).upper(), t(ch["role"]), ch["color"]
             if speaker == "you":
-                name = self.game.player_name.upper()
+                name = self.game.display_name.upper()
 
         if name:   # the name plate above the box, and the role next to it
-            label = c.create_text(x0 + 40, y0 - 5, anchor="w", text=name, font=self.F["h2"],
-                                  fill="#111111")
+            label = self.write(x0 + 40, y0 - 5, name, self.F["h2"], "#111111", anchor="w")
             right = max(c.bbox(label)[2] + 20, x0 + 150)
             plate = c.create_rectangle(x0 + 20, y0 - 22, right, y0 + 12, fill=color, outline="")
             c.tag_lower(plate, label)
-            info = c.create_text(right + 14, y0 - 5, anchor="w", text=role,
-                                 font=self.F["small"], fill=COLORS["text"])
+            info = self.write(right + 14, y0 - 5, role, self.F["small"], anchor="w")
             bx0, by0, bx1, by1 = c.bbox(info)
             back = c.create_rectangle(right, by0 - 3, bx1 + 12, by1 + 3, fill=COLORS["panel"],
                                       outline="")
@@ -1265,11 +1375,12 @@ class GameApp:
 
         font = self.F["italic"] if (speaker is None and question is None) else self.F["text"]
         color = "#c9cfe0" if (speaker is None and question is None) else COLORS["text"]
-        self.text_id = c.create_text(x0 + 30, y0 + 30, anchor="nw", text=question or "",
-                                     width=x1 - x0 - 70, font=font, fill=color)
+        self.type_font, self.type_width = font, x1 - x0 - 70     # for the typewriter
+        self.text_id = self.write(x0 + 30, y0 + 30, question or "", font, color, anchor="nw",
+                                  width=self.type_width, rtl_x=x1 - 40)
         if question is not None:
-            c.create_text(x1 - 20, y1 - 16, anchor="e", font=self.F["small"],
-                          fill=COLORS["muted"], text="Click a choice or press 1 / 2 / 3")
+            self.write(x1 - 20, y1 - 16, t("Click a choice or press 1, 2 or 3"),
+                       self.F["small"], COLORS["muted"], anchor="e", rtl_x=x0 + 20)
 
     # ------------------------------------------------------------------
     # ANIMATIONS: typewriter text, blinking arrow, chaos shake
@@ -1282,7 +1393,8 @@ class GameApp:
 
     def _type_step(self):
         self.shown += 2
-        self.c.itemconfig(self.text_id, text=self.full_text[:self.shown])
+        part = self.full_text[:self.shown]
+        self.c.itemconfig(self.text_id, text=self.shaped(part, self.type_font, self.type_width)[0])
         if self.shown >= len(self.full_text):
             self.finish_typing()
         else:
@@ -1293,9 +1405,10 @@ class GameApp:
             self.root.after_cancel(self.type_job)
             self.type_job = None
         self.typing = False
-        self.c.itemconfig(self.text_id, text=self.full_text)
-        arrow = self.c.create_text(BOX[2] - 24, BOX[3] - 18, text="▼  click / space",
-                                   anchor="e", font=self.F["small"], fill=COLORS["accent"])
+        self.c.itemconfig(self.text_id,
+                          text=self.shaped(self.full_text, self.type_font, self.type_width)[0])
+        arrow = self.write(BOX[2] - 24, BOX[3] - 18, "▼  " + t("click / space"),
+                           self.F["small"], COLORS["accent"], anchor="e")
         self._blink(arrow, self.frame, True)
 
     def _blink(self, item, frame, visible):
@@ -1307,8 +1420,7 @@ class GameApp:
     def chaos_effect(self):
         """+1 CHAOS: the screen shakes and a red message flies up."""
         frame = self.frame
-        popup = self.c.create_text(770, 90, text="+1 CHAOS!", font=self.F["hud_big"],
-                                   fill=COLORS["bold"])
+        popup = self.write(770, 90, t("+1 CHAOS!"), self.F["hud_big"], COLORS["bold"])
         offsets = [10, -10, 8, -8, 5, -5, 2, -2]
 
         def shake(step=0):
@@ -1372,9 +1484,9 @@ class GameApp:
 
     def ask_menu(self):
         self.timer_paused = True                 # the timer waits for your answer
-        leave = messagebox.askyesno("Back to menu?",
-                               "Go back to the main menu?\nThis story will be lost. "
-                               "Mayeul will pretend he didn't see anything.")
+        leave = messagebox.askyesno(vis(t("Back to menu?")),
+                                    vis(t("Go back to the main menu? This story will be lost. "
+                                          "Mayeul will pretend he didn't see anything.")))
         self.timer_paused = False
         if leave:
             self.show_menu()

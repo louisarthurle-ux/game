@@ -101,6 +101,33 @@ The app will be in the `dist/` folder.
 
 ---
 
+## Languages: English, Français, Deutsch, العربية
+
+The whole game is translated into **French**, **German** and **Arabic**: the story, the choices, the menus, Mayeul's notebook, the trophies and the endings. Choose the language with the buttons at the top of the main menu (the game remembers it). The text version asks at the start.
+
+| French menu | Arabic (right to left) | German notebook |
+|---|---|---|
+| ![French](screenshots/menu_fr.png) | ![Arabic](screenshots/game_ar.png) | ![German](screenshots/notebook_de.png) |
+
+**How it works:** the story is written in English, and each language has a file with a dictionary: `"English sentence": "translation"`.
+
+```python
+# lang_fr.py
+TEXTS = {
+    "Who exactly?":
+        "Qui exactement ?",
+    ...
+}
+```
+
+The function `t()` in `i18n.py` translates a text: `t("Who exactly?")` gives `"Qui exactement ?"` in French. If a translation is missing, the English text is shown, so the game never crashes. To check that nothing is missing, run:
+
+```
+python check_translations.py
+```
+
+**Arabic** is written from right to left, and its letters change shape and join together. Windows and Mac do this automatically. Linux can't, so `arabic.py` does it there: it chooses the right shape for each letter and puts the words in the right order.
+
 ## Your name
 
 When you start a new game, Mayeul asks for your name ("Your real one, please. I'll know if you lie."). The characters use it in the story, it appears on your name plate, in Mayeul's notebook and on the ending card. If you leave it empty, Mayeul calls you **Candidate 47**. In `story.py`, `{name}` in a line is replaced by your name.
@@ -131,7 +158,7 @@ Mayeul writes down everything you do. After each choice, a message says *"Mayeul
 
 ## How the code works (for the presentation)
 
-The project is split into 5 files. Each file has one job:
+The main files each have one job:
 
 | File | Job | What's inside |
 |---|---|---|
@@ -140,6 +167,10 @@ The project is split into 5 files. Each file has one job:
 | `game.py` | **App / launcher** | The window: main menu, HUD, drawings, dialogue box, buttons, notebook. |
 | `sounds.py` | **Audio** | Creates the music and sounds with maths (sine waves), and plays them. |
 | `terminal.py` | **Text version** | The same game with `print()` and `input()`. |
+| `i18n.py` | **Translations** | The `t()` function and the current language. |
+| `lang_fr.py`, `lang_de.py`, `lang_ar.py` | **Translations** | `"English": "translation"` dictionaries. |
+| `arabic.py` | **Arabic display** | Joins Arabic letters and writes right to left (for Linux). |
+| `check_translations.py` | **Checker** | Lists any text that isn't translated. |
 
 ### 1. A scene is a dictionary (`story.py`)
 

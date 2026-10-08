@@ -6,8 +6,9 @@ The graphical version (game.py) and the terminal version (terminal.py)
 both use this same class, so the rules are written only once.
 """
 
+from i18n import t
 from story import (SCENES, ENDINGS, TRACKS, FIRST_SCENE, NOTEBOOK_VERDICTS,
-                   DEFAULT_NAME)
+                   DEFAULT_NAME, TOO_SLOW_NOTE)
 
 MAX_CHAOS = 3        # 3 Bold choices possible (choices 2, 3 and 4)
 TOTAL_CHOICES = 5    # every path has exactly 5 choices
@@ -53,9 +54,16 @@ class Game:
         """For scenes without a choice (the prologue): go to the next one."""
         self.scene_id = self.scene["next"]
 
+    @property
+    def display_name(self):
+        """The player's name (Mayeul's default name is translated too)."""
+        if self.player_name == DEFAULT_NAME:
+            return t(DEFAULT_NAME)
+        return self.player_name
+
     def fill(self, text):
         """Put the player's name in a text: "Hello {name}" -> "Hello Lucie"."""
-        return text.replace("{name}", self.player_name)
+        return text.replace("{name}", self.display_name)
 
     def choose(self, index, timed_out=False):
         """The player picks choice number `index` (0, 1 or 2).
@@ -80,15 +88,12 @@ class Game:
             self.shirt = choice["shirt"]
 
         # 4) Remember the choice (we show the full path at the end).
-        note = choice.get("note", "")         # Mayeul is watching...
-        if timed_out:
-            note = "Too slow. I chose for them. " + note
         self.history.append({
             "scene": self.scene_id,
             "number": scene["number"],
             "label": choice["label"],
             "kind": choice["kind"],
-            "note": note,
+            "note": choice.get("note", ""),     # Mayeul is watching...
             "timed_out": timed_out,
         })
 
@@ -113,9 +118,15 @@ class Game:
         return self.ending_id is not None
 
     def notebook(self):
-        """Mayeul's notebook: his notes about each choice + his final verdict."""
-        notes = [self.fill(step["note"]) for step in self.history]
-        verdict = NOTEBOOK_VERDICTS[self.chaos]
+        """Mayeul's notebook: his notes about each choice + his final verdict
+        (translated into the current language)."""
+        notes = []
+        for step in self.history:
+            note = t(step["note"])
+            if step["timed_out"]:
+                note = t(TOO_SLOW_NOTE) + " " + note
+            notes.append(self.fill(note))
+        verdict = t(NOTEBOOK_VERDICTS[self.chaos])
         return notes, verdict
 
 
